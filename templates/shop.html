@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Loja · Gold Quest{% endblock %}
+{% block content %}
+<h1>Loja</h1>
+
+{% if offers %}
+  <ul class="shop-grid">
+    {% for item, info in offers %}
+      {% set missing = info.price - gold %}
+      <li class="shop-item trend-{{ info.trend }}">
+        <span class="shop-emoji" aria-hidden="true">{{ item.emoji }}</span>
+        <p class="shop-name">{{ item.name }}</p>
+        <p class="price">
+          <span class="coin coin-sm" aria-hidden="true"></span>{{ info.price }}
+          {% if info.trend == 'up' %}<span class="trend-badge" aria-label="Preço em alta">▲</span>
+          {% elif info.trend == 'down' %}<span class="trend-badge" aria-label="Em promoção">▼</span>{% endif %}
+          {% if info.trend != 'base' %}<s class="price-base" aria-label="Preço base">{{ info.base }}</s>{% endif %}
+        </p>
+        {% if info.trend != 'base' %}<p class="price-reason">{{ info.reason }}</p>{% endif %}
+        <form method="post" action="{{ url_for('buy_item', item_id=item.id) }}">
+          {% if missing > 0 %}
+            <button class="btn btn-block" type="submit" disabled>Faltam {{ missing }}</button>
+          {% else %}
+            <button class="btn btn-primary btn-block" type="submit">Comprar</button>
+          {% endif %}
+        </form>
+        <form method="post" action="{{ url_for('delete_shop_item', item_id=item.id) }}" onsubmit='return confirm({{ ("Remover " ~ item.name ~ " da loja?")|tojson }})'>
+          <button class="icon-btn shop-remove" type="submit" aria-label="Remover {{ item.name }}">✕</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+  <p class="hint shop-hint">Os preços sobem quando você compra muito o mesmo item e entram em promoção quando ele fica esquecido. Variar o lazer sai mais barato.</p>
+{% else %}
+  <p class="empty">A loja está vazia. Crie sua primeira recompensa abaixo.</p>
+{% endif %}
+
+<details class="panel" {% if not offers %}open{% endif %}>
+  <summary>Criar recompensa</summary>
+  <form class="stack" method="post" action="{{ url_for('add_shop_item') }}">
+    <div class="form-row">
+      <label class="field field-emoji">
+        <span>Ícone</span>
+        <input name="emoji" type="text" placeholder="🎁" maxlength="8">
+      </label>
+      <label class="field field-grow">
+        <span>Nome</span>
+        <input name="name" type="text" placeholder="Ex.: 30 min de redes sociais" maxlength="80" required>
+      </label>
+    </div>
+    <div class="form-row">
+      <label class="field">
+        <span>Preço base em gold</span>
+        <input name="price" type="number" min="1" step="1" inputmode="numeric" required>
+      </label>
+      <button class="btn btn-primary" type="submit">Adicionar à loja</button>
+    </div>
+  </form>
+</details>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Histórico · Gold Quest{% endblock %}
+{% block content %}
+<h1>Histórico</h1>
+
+<dl class="totals">
+  <div><dt>Ganho no total</dt><dd class="plus">+{{ earned }}</dd></div>
+  <div><dt>Gasto no total</dt><dd class="minus">−{{ spent }}</dd></div>
+</dl>
+
+{% if transactions %}
+  <ul class="list">
+    {% for t in transactions %}
+      <li class="list-row">
+        <div class="task-body">
+          <p class="task-title">{{ t.description }}</p>
+          <p class="task-meta">{{ t.created_at|br_datetime }}</p>
+        </div>
+        <span class="amount {{ 'plus' if t.amount > 0 else 'minus' }}">
+          {{ '+' if t.amount > 0 else '−' }}{{ t.amount|abs }}
+        </span>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="empty">Nenhuma movimentação ainda. Conclua uma <a href="{{ url_for('tasks') }}">tarefa</a> para ganhar seu primeiro gold.</p>
+{% endif %}
+{% endblock %}

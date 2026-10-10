@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Semana · Gold Quest{% endblock %}
+{% block content %}
+<h1>Semana</h1>
+
+{% if recurring %}
+  <section>
+    <h2>Carga por dia</h2>
+    <ul class="load panel">
+      {% for d in days %}
+        {% set is_max = max_count > 0 and d.count == max_count %}
+        <li class="load-row{% if d.index == today_index %} is-today{% endif %}{% if is_max %} is-max{% endif %}">
+          <span class="load-day">{{ d.label }}</span>
+          <div class="load-track">
+            <div class="load-bar" role="img" aria-label="{{ d.count }} de {{ max_count }} tarefas">
+              <span class="load-fill" style="width: {{ (d.count / max_count * 100) if max_count else 0 }}%"></span>
+            </div>
+            <p class="load-info">
+              {% if d.count %}
+                <strong>{{ d.count }} {{ 'tarefa' if d.count == 1 else 'tarefas' }}</strong>, {{ d.gold }} gold possíveis
+              {% else %}
+                Dia livre
+              {% endif %}
+              {% if is_max %}<span class="tag-max">Mais cheio</span>{% endif %}
+            </p>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section>
+    <h2>Tarefas por dia</h2>
+    <div class="table-wrap">
+      <table class="week-table">
+        <thead>
+          <tr>
+            <th scope="col"><span class="sr-only">Tarefa</span></th>
+            {% for d in days %}
+              <th scope="col" class="{% if d.index == today_index %}col-today{% endif %}">{{ d.label }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in recurring %}
+            <tr>
+              <th scope="row">{{ r.title }}<small>+{{ r.reward() }} gold</small></th>
+              {% for d in days %}
+                <td class="{% if d.index == today_index %}col-today{% endif %}">
+                  {% if d.index in r.weekday_list %}
+                    <span class="dot dot-{{ r.difficulty }}" title="{{ labels[r.difficulty] }}"></span>
+                    <span class="sr-only">Sim, {{ labels[r.difficulty] }}</span>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Total</th>
+            {% for d in days %}
+              <td class="{% if d.index == today_index %}col-today{% endif %}">{{ d.count }}</td>
+            {% endfor %}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <p class="legend">
+      {% for key, label in labels.items() %}
+        <span><span class="dot dot-{{ key }}" aria-hidden="true"></span>{{ label }}</span>
+      {% endfor %}
+    </p>
+  </section>
+{% else %}
+  <p class="empty">Nenhuma tarefa recorrente ainda. Crie uma em <a href="{{ url_for('tasks') }}">Tarefas</a> marcando os dias em que ela se repete.</p>
+{% endif %}
+{% endblock %}

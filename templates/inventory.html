@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Inventário · Gold Quest{% endblock %}
+{% block content %}
+<h1>Inventário</h1>
+
+{% if available %}
+  <ul class="list">
+    {% for inv in available %}
+      <li class="list-row">
+        <span class="row-emoji" aria-hidden="true">{{ inv.emoji }}</span>
+        <div class="task-body">
+          <p class="task-title">{{ inv.name }}</p>
+          <p class="task-meta">Comprado em {{ inv.purchased_at|br_datetime }}</p>
+        </div>
+        <form method="post" action="{{ url_for('use_item', inv_id=inv.id) }}">
+          <button class="btn btn-primary" type="submit">Usar</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="empty">Nada guardado ainda. Compre uma recompensa na <a href="{{ url_for('shop') }}">loja</a>.</p>
+{% endif %}
+
+{% if used %}
+<section>
+  <h2>Usados recentemente</h2>
+  <ul class="list is-muted">
+    {% for inv in used %}
+      <li class="list-row">
+        <span class="row-emoji" aria-hidden="true">{{ inv.emoji }}</span>
+        <div class="task-body">
+          <p class="task-title">{{ inv.name }}</p>
+          <p class="task-meta">Usado em {{ inv.used_at|br_datetime }}</p>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

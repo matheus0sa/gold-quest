@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Tarefas · Gold Quest{% endblock %}
+{% block content %}
+<h1>Tarefas</h1>
+
+<form class="panel task-form" method="post" action="{{ url_for('add_task') }}">
+  <label class="sr-only" for="title">Nova tarefa</label>
+  <input id="title" name="title" type="text" placeholder="O que precisa ser feito?" maxlength="120" required autocomplete="off">
+
+  <fieldset class="difficulty">
+    <legend>Dificuldade</legend>
+    <div class="diff-options">
+      {% for key, label in labels.items() %}
+        <label class="diff-option diff-{{ key }}">
+          <input type="radio" name="difficulty" value="{{ key }}" {% if key == 'media' %}checked{% endif %}>
+          <span>{{ label }}<small>{{ rewards[key] }} gold</small></span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset class="difficulty">
+    <legend>Repetir (opcional)</legend>
+    <div class="weekday-options">
+      {% for label in weekday_labels %}
+        <label class="weekday-option">
+          <input type="checkbox" name="weekdays" value="{{ loop.index0 }}">
+          <span>{{ label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <div class="form-row">
+    <label class="field" id="due-field">
+      <span>Prazo (opcional)</span>
+      <input type="date" name="due_date">
+    </label>
+    <button class="btn btn-primary" type="submit">Adicionar tarefa</button>
+  </div>
+  <p class="hint" id="form-hint">No prazo: +20% de gold. Atrasada: metade.</p>
+</form>
+
+{% if today_habits %}
+<section>
+  <h2>Hoje <span class="count">{{ today_done }}/{{ today_habits|length }}</span></h2>
+  <ul class="task-list">
+    {% for r in today_habits %}
+      {% set feito = r.is_done_on(today) %}
+      <li class="task{% if feito %} is-complete{% endif %}">
+        {% if feito %}
+          <span class="check is-checked" aria-label="Feito hoje"></span>
+        {% else %}
+          <form method="post" action="{{ url_for('complete_recurring', rec_id=r.id) }}">
+            <button class="check" type="submit" aria-label="Concluir {{ r.title }}"></button>
+          </form>
+        {% endif %}
+        <div class="task-body">
+          <p class="task-title">{{ r.title }}</p>
+          <p class="task-meta">
+            <span class="chip chip-{{ r.difficulty }}">{{ labels[r.difficulty] }}</span>
+            <span>🔁 {{ r.days_label() }}</span>
+          </p>
+        </div>
+        <span class="reward">{% if feito %}✓ {% endif %}+{{ r.reward() }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section>
+  <h2>Pendentes <span class="count">{{ pending|length }}</span></h2>
+  {% if pending %}
+    <ul class="task-list">
+      {% for t in pending %}
+        {% set status = t.due_status(today) %}
+        <li class="task">
+          <form method="post" action="{{ url_for('complete_task', task_id=t.id) }}">
+            <button class="check" type="submit" aria-label="Concluir {{ t.title }}"></button>
+          </form>
+          <div class="task-body">
+            <p class="task-title">{{ t.title }}</p>
+            <p class="task-meta">
+              <span class="chip chip-{{ t.difficulty }}">{{ labels[t.difficulty] }}</span>
+              {% if status == 'late' %}<span class="due due-late">Atrasada desde {{ t.due_date|br_date }}</span>
+              {% elif status == 'today' %}<span class="due due-today">Vence hoje</span>
+              {% elif status == 'future' %}<span class="due">Até {{ t.due_date|br_date }}</span>{% endif %}
+            </p>
+          </div>
+          <span class="reward" title="Gold ao concluir agora">+{{ t.calculate_reward(today) }}</span>
+          <form method="post" action="{{ url_for('delete_task', task_id=t.id) }}" onsubmit="return confirm('Excluir esta tarefa?')">
+            <button class="icon-btn" type="submit" aria-label="Excluir {{ t.title }}">✕</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty">Nenhuma tarefa pendente. Adicione uma acima para começar a juntar gold.</p>
+  {% endif %}
+</section>
+
+{% if recurring %}
+<section>
+  <h2>Recorrentes <span class="count">{{ recurring|length }}</span></h2>
+  <ul class="list">
+    {% for r in recurring %}
+      <li class="list-row">
+        <span class="row-emoji" aria-hidden="true">🔁</span>
+        <div class="task-body">
+          <p class="task-title">{{ r.title }}</p>
+          <p class="task-meta">
+            <span class="chip chip-{{ r.difficulty }}">{{ labels[r.difficulty] }}</span>
+            <span>{{ r.days_label() }}</span>
+          </p>
+        </div>
+        <form method="post" action="{{ url_for('delete_recurring', rec_id=r.id) }}" onsubmit="return confirm('Excluir esta tarefa recorrente?')">
+          <button class="icon-btn" type="submit" aria-label="Excluir {{ r.title }}">✕</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if done %}
+<section>
+  <h2>Concluídas recentemente</h2>
+  <ul class="task-list is-done">
+    {% for t in done %}
+      <li class="task">
+        <span class="check is-checked" aria-hidden="true"></span>
+        <div class="task-body">
+          <p class="task-title">{{ t.title }}</p>
+          <p class="task-meta">{{ t.completed_at|br_datetime }}</p>
+        </div>
+        <span class="reward">+{{ t.reward_earned }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+<script>
+  // Ao marcar dias da semana, o prazo deixa de fazer sentido
+  const dias = document.querySelectorAll('input[name="weekdays"]');
+  const prazo = document.getElementById('due-field');
+  const dica = document.getElementById('form-hint');
+  function atualizar() {
+    const repete = [...dias].some(d => d.checked);
+    prazo.hidden = repete;
+    prazo.querySelector('input').disabled = repete;
+    dica.textContent = repete
+      ? 'Aparece em "Hoje" nos dias marcados e dá gold toda vez.'
+      : 'No prazo: +20% de gold. Atrasada: metade.';
+  }
+  dias.forEach(d => d.addEventListener('change', atualizar));
+</script>
+{% endblock %}
