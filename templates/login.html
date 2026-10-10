@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Entrar · Gold Quest{% endblock %}
+{% block content %}
+<div class="auth">
+  <h1>Entrar</h1>
+  <form class="panel stack" method="post" action="{{ url_for('login') }}">
+    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+    <label class="field">
+      <span>Usuário</span>
+      <input name="username" type="text" value="{{ username }}" maxlength="30" required
+             autocomplete="username" autocapitalize="none" spellcheck="false" autofocus>
+    </label>
+    <label class="field">
+      <span>Senha</span>
+      <input name="password" type="password" required autocomplete="current-password">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="remember" value="1" checked>
+      <span>Manter conectado neste aparelho</span>
+    </label>
+    <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+  </form>
+  <p class="auth-switch">Ainda não tem conta? <a href="{{ url_for('register') }}">Criar conta</a></p>
+</div>
+{% endblock %}

@@ -22,6 +22,15 @@ pip install -r requirements.txt
 python app.py
 ```
 
+## Contas
+
+Cada pessoa cria a própria conta em "Criar conta" e tem tarefas, loja, inventário e gold
+separados. Se você já usava o app antes do login existir, a **primeira conta criada** recebe
+todos os dados antigos.
+
+A chave que assina os logins é gerada sozinha no arquivo `.secret_key` (não vai para o git).
+Apagar esse arquivo desconecta todo mundo. Se preferir, defina a variável `SECRET_KEY`.
+
 ## Dados
 
 Tudo fica em `gold_quest.db`, criado na primeira execução. Para levar seus dados para

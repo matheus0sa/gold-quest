@@ -1,5 +1,8 @@
 from datetime import datetime
+
+from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import check_password_hash, generate_password_hash
 
 db = SQLAlchemy()
 
@@ -11,14 +14,28 @@ ON_TIME_BONUS = 1.2   # +20% se concluir até o prazo
 LATE_PENALTY = 0.5    # metade do gold se concluir atrasado
 
 
-class Wallet(db.Model):
-    """Carteira única (app de um usuário só, por enquanto)."""
+class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(30), nullable=False, unique=True)  # sempre minúsculo
+    password_hash = db.Column(db.String(255), nullable=False)
     gold = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+
+def user_fk():
+    """Coluna de dono, repetida em toda tabela que pertence a um usuário."""
+    return db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
 
 
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    user_id = user_fk()
     title = db.Column(db.String(120), nullable=False)
     difficulty = db.Column(db.String(10), nullable=False, default="media")
     due_date = db.Column(db.Date, nullable=True)
@@ -47,6 +64,7 @@ class Task(db.Model):
 
 class ShopItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    user_id = user_fk()
     name = db.Column(db.String(80), nullable=False)
     price = db.Column(db.Integer, nullable=False)  # preço base
     emoji = db.Column(db.String(8), nullable=False, default="🎁")
@@ -55,6 +73,7 @@ class ShopItem(db.Model):
 
 class InventoryItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    user_id = user_fk()
     shop_item_id = db.Column(db.Integer, db.ForeignKey("shop_item.id"), nullable=True)
     price_paid = db.Column(db.Integer, nullable=True)
     name = db.Column(db.String(80), nullable=False)
@@ -66,6 +85,7 @@ class InventoryItem(db.Model):
 class Transaction(db.Model):
     """Histórico de tudo que entra (+) e sai (-) da carteira."""
     id = db.Column(db.Integer, primary_key=True)
+    user_id = user_fk()
     amount = db.Column(db.Integer, nullable=False)
     description = db.Column(db.String(160), nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
@@ -77,6 +97,7 @@ WEEKDAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]  # date.week
 class RecurringTask(db.Model):
     """Hábito que se repete em dias da semana escolhidos (ex.: academia seg/qua/sex)."""
     id = db.Column(db.Integer, primary_key=True)
+    user_id = user_fk()
     title = db.Column(db.String(120), nullable=False)
     difficulty = db.Column(db.String(10), nullable=False, default="media")
     weekdays = db.Column(db.String(20), nullable=False)  # ex.: "0,2,4"

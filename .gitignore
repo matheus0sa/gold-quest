@@ -1,2 +1,4 @@
 gold_quest.db
 venv
+.secret_key
+__pycache__/

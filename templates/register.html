@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Criar conta · Gold Quest{% endblock %}
+{% block content %}
+<div class="auth">
+  <h1>Criar conta</h1>
+  <form class="panel stack" method="post" action="{{ url_for('register') }}">
+    <label class="field">
+      <span>Usuário</span>
+      <input name="username" type="text" value="{{ username }}" minlength="3" maxlength="30"
+             pattern="[A-Za-z0-9._\-]{3,30}" required
+             autocomplete="username" autocapitalize="none" spellcheck="false" autofocus>
+    </label>
+    <p class="hint">De 3 a 30 caracteres: letras, números, ponto, hífen ou _.</p>
+    <label class="field">
+      <span>Senha</span>
+      <input name="password" type="password" minlength="8" required autocomplete="new-password">
+    </label>
+    <label class="field">
+      <span>Confirmar senha</span>
+      <input name="confirm" type="password" minlength="8" required autocomplete="new-password">
+    </label>
+    <button class="btn btn-primary btn-block" type="submit">Criar conta</button>
+  </form>
+  <p class="auth-switch">Já tem conta? <a href="{{ url_for('login') }}">Entrar</a></p>
+</div>
+{% endblock %}

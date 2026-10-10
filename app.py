@@ -1,8 +1,12 @@
 import os
+import re
+import secrets
 from datetime import date, datetime, timedelta
+from urllib.parse import urlparse
 
-from flask import Flask, flash, redirect, render_template, request, url_for
-from sqlalchemy import inspect, text
+from flask import Flask, abort, flash, redirect, render_template, request, url_for
+from flask_login import LoginManager, current_user, login_user, logout_user
+from sqlalchemy import func, inspect, text
 
 from models import (
     DIFFICULTY_LABELS,
@@ -14,7 +18,7 @@ from models import (
     ShopItem,
     Task,
     Transaction,
-    Wallet,
+    User,
     db,
 )
 
@@ -22,38 +26,72 @@ from pricing import DIAS_PARA_ESQUECER, calcular_preco
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
+
+def load_secret_key():
+    """Usa SECRET_KEY do ambiente; senão gera uma vez e guarda em .secret_key."""
+    if os.environ.get("SECRET_KEY"):
+        return os.environ["SECRET_KEY"]
+    path = os.path.join(BASE_DIR, ".secret_key")
+    if not os.path.exists(path):
+        with open(path, "w") as f:
+            f.write(secrets.token_hex(32))
+    with open(path) as f:
+        return f.read().strip()
+
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "troque-esta-chave-em-producao")
+app.config["SECRET_KEY"] = load_secret_key()
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(BASE_DIR, "gold_quest.db")
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
+app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=60)
 db.init_app(app)
+
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message = None  # a tela de login já se explica
+
+# Tabelas que pertencem a um usuário (todas ganham a coluna user_id)
+OWNED_TABLES = ["task", "recurring_task", "shop_item", "inventory_item", "transaction"]
+PUBLIC_ENDPOINTS = {"login", "register", "static"}
+USERNAME_RE = re.compile(r"^[a-z0-9._-]{3,30}$")
+MIN_PASSWORD = 8
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
+
+
+@app.before_request
+def require_login():
+    if request.endpoint in PUBLIC_ENDPOINTS or current_user.is_authenticated:
+        return None
+    return login_manager.unauthorized()
 
 
 # ---------- Helpers ----------
 
-def get_wallet():
-    wallet = db.session.get(Wallet, 1)
-    if wallet is None:
-        wallet = Wallet(id=1, gold=0)
-        db.session.add(wallet)
-        db.session.commit()
-    return wallet
+def get_owned(model, obj_id):
+    """Busca um registro do usuário logado; 404 se não existir ou for de outra pessoa."""
+    obj = db.get_or_404(model, obj_id)
+    if obj.user_id != current_user.id:
+        abort(404)
+    return obj
 
 
 def change_gold(amount, description):
     """Altera o saldo e registra no histórico. Quem chama faz o commit."""
-    wallet = get_wallet()
-    wallet.gold += amount
-    db.session.add(Transaction(amount=amount, description=description))
+    current_user.gold += amount
+    db.session.add(Transaction(user_id=current_user.id, amount=amount, description=description))
 
 
-def seed_shop():
-    if ShopItem.query.count() == 0:
-        db.session.add_all([
-            ShopItem(name="1 hora de videogame", price=100, emoji="🎮"),
-            ShopItem(name="Episódio de série", price=50, emoji="📺"),
-            ShopItem(name="Pedir delivery", price=300, emoji="🍕"),
-        ])
-        db.session.commit()
+def seed_shop(user):
+    db.session.add_all([
+        ShopItem(user_id=user.id, name="1 hora de videogame", price=100, emoji="🎮"),
+        ShopItem(user_id=user.id, name="Episódio de série", price=50, emoji="📺"),
+        ShopItem(user_id=user.id, name="Pedir delivery", price=300, emoji="🍕"),
+    ])
 
 
 def upgrade_db():
@@ -78,6 +116,40 @@ def upgrade_db():
                 "(SELECT id FROM shop_item WHERE shop_item.name = inventory_item.name) "
                 "WHERE shop_item_id IS NULL"
             ))
+        # Versões de um usuário só não tinham dono nos registros
+        for table in OWNED_TABLES:
+            if "user_id" not in {c["name"] for c in insp.get_columns(table)}:
+                conn.execute(text(
+                    f'ALTER TABLE "{table}" ADD COLUMN user_id INTEGER REFERENCES "user"(id)'
+                ))
+                conn.execute(text(f'CREATE INDEX ix_{table}_user_id ON "{table}" (user_id)'))
+
+
+def claim_legacy_data(user):
+    """Entrega ao primeiro usuário os dados da época em que o app não tinha login."""
+    claimed = False
+    for table in OWNED_TABLES:
+        result = db.session.execute(
+            text(f'UPDATE "{table}" SET user_id = :uid WHERE user_id IS NULL'), {"uid": user.id}
+        )
+        claimed = claimed or result.rowcount > 0
+    if inspect(db.engine).has_table("wallet"):
+        old_gold = db.session.execute(text("SELECT gold FROM wallet WHERE id = 1")).scalar()
+        if old_gold:
+            user.gold = old_gold
+            claimed = True
+    return claimed
+
+
+def safe_next(target):
+    """Só aceita redirecionar para caminhos deste próprio site."""
+    if not target:
+        return None
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc or not target.startswith("/") or target.startswith("//") \
+            or "\\" in target:
+        return None
+    return target
 
 
 def preco_atual(item, hoje=None):
@@ -105,13 +177,12 @@ def preco_atual(item, hoje=None):
 with app.app_context():
     db.create_all()
     upgrade_db()
-    get_wallet()
-    seed_shop()
 
 
 @app.context_processor
 def inject_globals():
-    return {"gold": get_wallet().gold}
+    gold = current_user.gold if current_user.is_authenticated else None
+    return {"gold": gold}
 
 
 @app.template_filter("br_date")
@@ -124,23 +195,98 @@ def br_datetime(value):
     return value.strftime("%d/%m às %H:%M") if value else ""
 
 
+# ---------- Conta ----------
+
+@app.route("/entrar", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("tasks"))
+    next_url = safe_next(request.values.get("next"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
+        password = request.form.get("password", "")
+        user = User.query.filter_by(username=username).first()
+        if user is None or not user.check_password(password):
+            flash("Usuário ou senha incorretos.", "error")
+            return render_template("login.html", next_url=next_url, username=username), 401
+        login_user(user, remember=bool(request.form.get("remember")))
+        return redirect(next_url or url_for("tasks"))
+
+    return render_template("login.html", next_url=next_url, username="")
+
+
+@app.route("/cadastro", methods=["GET", "POST"])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for("tasks"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm", "")
+
+        error = None
+        if not USERNAME_RE.match(username):
+            error = "O usuário deve ter de 3 a 30 caracteres: letras, números, ponto, hífen ou _."
+        elif User.query.filter_by(username=username).first():
+            error = "Esse nome de usuário já existe."
+        elif len(password) < MIN_PASSWORD:
+            error = f"A senha precisa ter pelo menos {MIN_PASSWORD} caracteres."
+        elif password != confirm:
+            error = "As senhas não conferem."
+        if error:
+            flash(error, "error")
+            return render_template("register.html", username=username), 400
+
+        first_user = User.query.count() == 0
+        user = User(username=username)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.flush()  # gera o id
+
+        claimed = first_user and claim_legacy_data(user)
+        if not claimed:
+            seed_shop(user)
+        db.session.commit()
+
+        login_user(user, remember=True)
+        if claimed:
+            flash("Conta criada. Seus dados anteriores foram transferidos para ela.", "ok")
+        else:
+            flash(f"Bem-vindo, {user.username}! Conclua tarefas para ganhar gold.", "ok")
+        return redirect(url_for("tasks"))
+
+    return render_template("register.html", username="")
+
+
+@app.post("/sair")
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
+
+
 # ---------- Tarefas ----------
 
 @app.route("/")
 def tasks():
     pending = (
-        Task.query.filter_by(done=False)
+        Task.query.filter_by(user_id=current_user.id, done=False)
         .order_by(Task.due_date.is_(None), Task.due_date, Task.created_at)
         .all()
     )
     done = (
-        Task.query.filter_by(done=True)
+        Task.query.filter_by(user_id=current_user.id, done=True)
         .order_by(Task.completed_at.desc())
         .limit(10)
         .all()
     )
     today = date.today()
-    recurring = RecurringTask.query.order_by(RecurringTask.created_at).all()
+    recurring = (
+        RecurringTask.query.filter_by(user_id=current_user.id)
+        .order_by(RecurringTask.created_at)
+        .all()
+    )
     today_habits = [r for r in recurring if r.is_scheduled(today)]
     return render_template(
         "tasks.html",
@@ -172,6 +318,7 @@ def add_task():
     weekdays = sorted({int(d) for d in request.form.getlist("weekdays") if d.isdigit() and 0 <= int(d) <= 6})
     if weekdays:
         db.session.add(RecurringTask(
+            user_id=current_user.id,
             title=title[:120],
             difficulty=difficulty,
             weekdays=",".join(str(d) for d in weekdays),
@@ -188,7 +335,9 @@ def add_task():
             flash("Data de prazo inválida.", "error")
             return redirect(url_for("tasks"))
 
-    db.session.add(Task(title=title[:120], difficulty=difficulty, due_date=due_date))
+    db.session.add(Task(
+        user_id=current_user.id, title=title[:120], difficulty=difficulty, due_date=due_date
+    ))
     db.session.commit()
     flash("Tarefa adicionada.", "ok")
     return redirect(url_for("tasks"))
@@ -196,7 +345,7 @@ def add_task():
 
 @app.post("/tarefas/<int:task_id>/concluir")
 def complete_task(task_id):
-    task = db.get_or_404(Task, task_id)
+    task = get_owned(Task, task_id)
     if task.done:
         return redirect(url_for("tasks"))
 
@@ -213,7 +362,7 @@ def complete_task(task_id):
 
 @app.post("/tarefas/<int:task_id>/excluir")
 def delete_task(task_id):
-    task = db.get_or_404(Task, task_id)
+    task = get_owned(Task, task_id)
     db.session.delete(task)
     db.session.commit()
     flash("Tarefa excluída.", "ok")
@@ -224,7 +373,7 @@ def delete_task(task_id):
 
 @app.post("/recorrentes/<int:rec_id>/concluir")
 def complete_recurring(rec_id):
-    rec = db.get_or_404(RecurringTask, rec_id)
+    rec = get_owned(RecurringTask, rec_id)
     today = date.today()
 
     if not rec.is_scheduled(today):
@@ -244,7 +393,7 @@ def complete_recurring(rec_id):
 
 @app.post("/recorrentes/<int:rec_id>/excluir")
 def delete_recurring(rec_id):
-    rec = db.get_or_404(RecurringTask, rec_id)
+    rec = get_owned(RecurringTask, rec_id)
     db.session.delete(rec)
     db.session.commit()
     flash("Tarefa recorrente excluída.", "ok")
@@ -253,7 +402,11 @@ def delete_recurring(rec_id):
 
 @app.route("/semana")
 def week():
-    recurring = RecurringTask.query.order_by(RecurringTask.title).all()
+    recurring = (
+        RecurringTask.query.filter_by(user_id=current_user.id)
+        .order_by(RecurringTask.title)
+        .all()
+    )
     days = []
     for i, label in enumerate(WEEKDAY_LABELS):
         tasks_day = [r for r in recurring if i in r.weekday_list]
@@ -279,7 +432,7 @@ def week():
 @app.route("/loja")
 def shop():
     hoje = date.today()
-    items = ShopItem.query.order_by(ShopItem.price).all()
+    items = ShopItem.query.filter_by(user_id=current_user.id).order_by(ShopItem.price).all()
     offers = [(item, preco_atual(item, hoje)) for item in items]
     return render_template("shop.html", offers=offers, dias_esquecer=DIAS_PARA_ESQUECER)
 
@@ -297,7 +450,7 @@ def add_shop_item():
         flash("Dê um nome e um preço maior que zero para a recompensa.", "error")
         return redirect(url_for("shop"))
 
-    db.session.add(ShopItem(name=name[:80], price=price, emoji=emoji[:8]))
+    db.session.add(ShopItem(user_id=current_user.id, name=name[:80], price=price, emoji=emoji[:8]))
     db.session.commit()
     flash(f"{name} agora está na loja.", "ok")
     return redirect(url_for("shop"))
@@ -305,18 +458,18 @@ def add_shop_item():
 
 @app.post("/loja/<int:item_id>/comprar")
 def buy_item(item_id):
-    item = db.get_or_404(ShopItem, item_id)
-    wallet = get_wallet()
+    item = get_owned(ShopItem, item_id)
 
     price = preco_atual(item).price  # sempre recalcula na hora da compra
 
-    if wallet.gold < price:
-        flash(f"Faltam {price - wallet.gold} gold para comprar {item.name}.", "error")
+    if current_user.gold < price:
+        flash(f"Faltam {price - current_user.gold} gold para comprar {item.name}.", "error")
         return redirect(url_for("shop"))
 
     change_gold(-price, f"Compra: {item.name}")
     db.session.add(InventoryItem(
-        name=item.name, emoji=item.emoji, shop_item_id=item.id, price_paid=price
+        user_id=current_user.id, name=item.name, emoji=item.emoji,
+        shop_item_id=item.id, price_paid=price,
     ))
     db.session.commit()
     flash(f"{item.name} foi para o seu inventário por {price} gold.", "ok")
@@ -325,7 +478,7 @@ def buy_item(item_id):
 
 @app.post("/loja/<int:item_id>/excluir")
 def delete_shop_item(item_id):
-    item = db.get_or_404(ShopItem, item_id)
+    item = get_owned(ShopItem, item_id)
     # Mantém o inventário, só desfaz a ligação com o item removido
     InventoryItem.query.filter_by(shop_item_id=item.id).update({"shop_item_id": None})
     db.session.delete(item)
@@ -338,9 +491,10 @@ def delete_shop_item(item_id):
 
 @app.route("/inventario")
 def inventory():
-    available = InventoryItem.query.filter_by(used_at=None).order_by(InventoryItem.purchased_at).all()
+    mine = InventoryItem.query.filter_by(user_id=current_user.id)
+    available = mine.filter_by(used_at=None).order_by(InventoryItem.purchased_at).all()
     used = (
-        InventoryItem.query.filter(InventoryItem.used_at.isnot(None))
+        mine.filter(InventoryItem.used_at.isnot(None))
         .order_by(InventoryItem.used_at.desc())
         .limit(10)
         .all()
@@ -350,7 +504,7 @@ def inventory():
 
 @app.post("/inventario/<int:inv_id>/usar")
 def use_item(inv_id):
-    inv = db.get_or_404(InventoryItem, inv_id)
+    inv = get_owned(InventoryItem, inv_id)
     if inv.used_at is None:
         inv.used_at = datetime.now()
         db.session.commit()
@@ -362,9 +516,10 @@ def use_item(inv_id):
 
 @app.route("/historico")
 def history():
-    transactions = Transaction.query.order_by(Transaction.created_at.desc()).limit(100).all()
-    earned = sum(t.amount for t in Transaction.query.filter(Transaction.amount > 0))
-    spent = -sum(t.amount for t in Transaction.query.filter(Transaction.amount < 0))
+    mine = Transaction.query.filter_by(user_id=current_user.id)
+    transactions = mine.order_by(Transaction.created_at.desc()).limit(100).all()
+    earned = mine.filter(Transaction.amount > 0).with_entities(func.sum(Transaction.amount)).scalar() or 0
+    spent = -(mine.filter(Transaction.amount < 0).with_entities(func.sum(Transaction.amount)).scalar() or 0)
     return render_template("history.html", transactions=transactions, earned=earned, spent=spent)
 
 
