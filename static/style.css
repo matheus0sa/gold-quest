@@ -428,3 +428,18 @@ a.icon-btn:hover { color: var(--ink); }
   padding-left: 0.75rem; border-radius: var(--radius-sm); background: var(--bg); font-weight: 700;
 }
 .modal-error { margin-top: 0.75rem; color: var(--danger); font-weight: 600; }
+
+/* ---------- Filtro por tag ---------- */
+.tag-filter {
+  display: flex; gap: 0.4rem; margin: 1.5rem 0 0;
+  overflow-x: auto; scrollbar-width: none; padding-bottom: 2px;
+}
+.tag-filter::-webkit-scrollbar { display: none; }
+.tag-filter a {
+  flex: none; white-space: nowrap; text-decoration: none;
+  padding: 0.45rem 0.9rem; border-radius: 999px;
+  font-weight: 700; font-size: 0.85rem; color: var(--muted); background: var(--surface);
+}
+.tag-filter a:hover { color: var(--ink); }
+.tag-filter a[aria-current="true"] { background: var(--ink); color: #fff; }
+h1 + .tag-filter { margin-top: 0; }

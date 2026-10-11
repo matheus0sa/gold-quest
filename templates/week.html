@@ -1,7 +1,9 @@
 {% extends "base.html" %}
+{% from "_tag_filter.html" import tag_filter as tag_filter_bar %}
 {% block title %}Semana · Gold Quest{% endblock %}
 {% block content %}
 <h1>Semana</h1>
+{{ tag_filter_bar(tags, tag_filter, 'week') }}
 
 {% if recurring %}
   <section>
@@ -73,7 +75,11 @@
     </p>
   </section>
 {% elif not monthly %}
-  <p class="empty">Nenhuma tarefa recorrente ainda. Crie uma em <a href="{{ url_for('tasks') }}">Tarefas</a> marcando os dias em que ela se repete.</p>
+  {% if tag_filter == 'all' %}
+    <p class="empty">Nenhuma tarefa recorrente ainda. Crie uma em <a href="{{ url_for('tasks') }}">Tarefas</a> marcando os dias em que ela se repete.</p>
+  {% else %}
+    <p class="empty">Nenhuma tarefa recorrente com este filtro. <a href="{{ url_for('week', tag='all') }}">Ver todas</a></p>
+  {% endif %}
 {% endif %}
 
 {% if monthly %}

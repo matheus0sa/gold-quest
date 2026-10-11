@@ -1,15 +1,18 @@
 {% extends "base.html" %}
 {% from "_task_fields.html" import task_fields, tag_dialog %}
+{% from "_tag_filter.html" import tag_filter as tag_filter_bar %}
 {% block title %}Tarefas · Gold Quest{% endblock %}
 {% block content %}
 <h1>Tarefas</h1>
 
 <form class="panel task-form" method="post" action="{{ url_for('add_task') }}">
-  {{ task_fields('new', labels, rewards, weekday_labels, tags) }}
+  {{ task_fields('new', labels, rewards, weekday_labels, tags, default_tag=tag_filter if tag_filter is number else none) }}
   <button class="btn btn-primary" type="submit">Adicionar tarefa</button>
   <p class="hint" id="form-hint" data-dynamic>No prazo: +20% de gold. Atrasada: metade.</p>
 </form>
 {{ tag_dialog(tags) }}
+
+{{ tag_filter_bar(tags, tag_filter, 'tasks') }}
 
 {% if today_habits %}
 <section>
@@ -103,7 +106,11 @@
       {% endfor %}
     </ul>
   {% else %}
-    <p class="empty">Nenhuma tarefa pendente. Adicione uma acima para começar a juntar gold.</p>
+    {% if tag_filter == 'all' %}
+      <p class="empty">Nenhuma tarefa pendente. Adicione uma acima para começar a juntar gold.</p>
+    {% else %}
+      <p class="empty">Nenhuma tarefa pendente com este filtro. <a href="{{ url_for('tasks', tag='all') }}">Ver todas</a></p>
+    {% endif %}
   {% endif %}
 </section>
 

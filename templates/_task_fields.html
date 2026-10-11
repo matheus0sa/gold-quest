@@ -1,10 +1,11 @@
 {#
   Campos do formulário de tarefa, compartilhados entre criar e editar.
   mode: "new" (escolhe prazo ou repetição), "task" (só prazo) ou "recurring" (só repetição).
-  tags: tags do usuário; t: tarefa sendo editada, ou None.
+  tags: tags do usuário; t: tarefa sendo editada, ou None; default_tag: tag pré-selecionada ao criar.
   O modal de tags (tag_dialog) fica fora do <form>, porque tem formulários próprios.
 #}
-{% macro task_fields(mode, labels, rewards, weekday_labels, tags, t=None) %}
+{% macro task_fields(mode, labels, rewards, weekday_labels, tags, t=None, default_tag=None) %}
+  {% set selected_tag = t.tag_id if t else default_tag %}
   <label class="sr-only" for="title">Título</label>
   <input id="title" name="title" type="text" placeholder="O que precisa ser feito?" maxlength="120"
          required autocomplete="off" value="{{ t.title if t else '' }}">
@@ -26,12 +27,12 @@
     <legend>Tag</legend>
     <div class="tag-options" id="tag-options">
       <label class="tag-option">
-        <input type="radio" name="tag_id" value="" {% if not t or not t.tag_id %}checked{% endif %}>
+        <input type="radio" name="tag_id" value="" {% if not selected_tag %}checked{% endif %}>
         <span>Nenhuma</span>
       </label>
       {% for tag in tags %}
         <label class="tag-option">
-          <input type="radio" name="tag_id" value="{{ tag.id }}" {% if t and t.tag_id == tag.id %}checked{% endif %}>
+          <input type="radio" name="tag_id" value="{{ tag.id }}" {% if selected_tag == tag.id %}checked{% endif %}>
           <span>{{ tag.name }}</span>
         </label>
       {% endfor %}

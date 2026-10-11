@@ -4,7 +4,7 @@ import secrets
 from datetime import date, datetime, timedelta
 from urllib.parse import urlparse
 
-from flask import Flask, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import Flask, abort, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import LoginManager, current_user, login_user, logout_user
 from sqlalchemy import func, inspect, text
 
@@ -109,6 +109,30 @@ def seed_tags(user):
 
 def user_tags():
     return Tag.query.filter_by(user_id=current_user.id).order_by(func.lower(Tag.name)).all()
+
+
+def current_tag_filter(tags):
+    """
+    Filtro de tag das telas de tarefas: vem de ?tag= e fica lembrado na sessão,
+    para sobreviver aos redirecionamentos (concluir, excluir...).
+    Devolve "all", "none" (sem tag) ou o id de uma tag do usuário.
+    """
+    if "tag" in request.args:
+        session["tag_filter"] = request.args["tag"]
+    raw = session.get("tag_filter", "all")
+    if raw == "none":
+        return "none"
+    if raw.isdigit() and int(raw) in {t.id for t in tags}:
+        return int(raw)
+    return "all"
+
+
+def filter_by_tag(query, model, tag_filter):
+    if tag_filter == "none":
+        return query.filter(model.tag_id.is_(None))
+    if tag_filter != "all":
+        return query.filter(model.tag_id == tag_filter)
+    return query
 
 
 def upgrade_db():
@@ -349,20 +373,18 @@ def review():
 
 @app.route("/")
 def tasks():
+    tags = user_tags()
+    tag_filter = current_tag_filter(tags)
+    mine = filter_by_tag(Task.query.filter_by(user_id=current_user.id), Task, tag_filter)
     pending = (
-        Task.query.filter_by(user_id=current_user.id, done=False)
+        mine.filter_by(done=False)
         .order_by(Task.due_date.is_(None), Task.due_date, Task.created_at)
         .all()
     )
-    done = (
-        Task.query.filter_by(user_id=current_user.id, done=True)
-        .order_by(Task.completed_at.desc())
-        .limit(10)
-        .all()
-    )
+    done = mine.filter_by(done=True).order_by(Task.completed_at.desc()).limit(10).all()
     today = date.today()
     recurring = (
-        RecurringTask.query.filter_by(user_id=current_user.id)
+        filter_by_tag(RecurringTask.query.filter_by(user_id=current_user.id), RecurringTask, tag_filter)
         .order_by(RecurringTask.created_at)
         .all()
     )
@@ -380,7 +402,8 @@ def tasks():
         monthly=monthly,
         month_done=sum(1 for _, c in monthly if c),
         month_label=MONTH_LABELS[today.month - 1],
-        tags=user_tags(),
+        tags=tags,
+        tag_filter=tag_filter,
         weekday_labels=WEEKDAY_LABELS,
         today=today,
         labels=DIFFICULTY_LABELS,
@@ -610,8 +633,10 @@ def delete_recurring(rec_id):
 
 @app.route("/semana")
 def week():
+    tags = user_tags()
+    tag_filter = current_tag_filter(tags)
     all_recurring = (
-        RecurringTask.query.filter_by(user_id=current_user.id)
+        filter_by_tag(RecurringTask.query.filter_by(user_id=current_user.id), RecurringTask, tag_filter)
         .order_by(RecurringTask.title)
         .all()
     )
@@ -631,6 +656,8 @@ def week():
         "week.html",
         recurring=recurring,
         monthly=monthly,
+        tags=tags,
+        tag_filter=tag_filter,
         days=days,
         max_count=max_count,
         today_index=date.today().weekday(),

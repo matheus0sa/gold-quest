@@ -1,0 +1,15 @@
+{#
+  Barra de filtro por tag. active: "all", "none" ou o id da tag (ver current_tag_filter).
+  O filtro fica lembrado na sessão, então vale também ao trocar de tela.
+#}
+{% macro tag_filter(tags, active, endpoint) %}
+  {% if tags %}
+    <nav class="tag-filter" aria-label="Filtrar por tag">
+      <a href="{{ url_for(endpoint, tag='all') }}" {% if active == 'all' %}aria-current="true"{% endif %}>Todas</a>
+      {% for tag in tags %}
+        <a href="{{ url_for(endpoint, tag=tag.id) }}" {% if active == tag.id %}aria-current="true"{% endif %}>#{{ tag.name }}</a>
+      {% endfor %}
+      <a href="{{ url_for(endpoint, tag='none') }}" {% if active == 'none' %}aria-current="true"{% endif %}>Sem tag</a>
+    </nav>
+  {% endif %}
+{% endmacro %}
