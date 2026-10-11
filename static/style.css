@@ -400,3 +400,31 @@ a.btn, a.icon-btn {
   display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
 }
 a.icon-btn:hover { color: var(--ink); }
+
+/* ---------- Tags ---------- */
+.tag-options { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.tag-option input { position: absolute; opacity: 0; pointer-events: none; }
+.tag-option span, .tag-manage {
+  display: inline-flex; align-items: center; min-height: 40px; padding: 0 0.9rem;
+  border-radius: 999px; border: 2px solid var(--line);
+  font: inherit; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+}
+.tag-option input:checked + span { border-color: var(--ink); background: var(--ink); color: #fff; }
+.tag-option input:focus-visible + span { outline: 3px solid var(--gold); outline-offset: 2px; }
+.tag-manage { background: transparent; color: var(--muted); border-style: dashed; }
+.tag-manage:hover { color: var(--ink); border-color: var(--ink); }
+.tag-chip { font-weight: 700; color: var(--muted); }
+
+.modal {
+  width: min(420px, calc(100% - 32px)); padding: 1rem 1.25rem 1.25rem;
+  border: 0; border-radius: var(--radius-lg); background: var(--surface); color: var(--ink);
+}
+.modal::backdrop { background: rgb(31 42 68 / 0.45); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; }
+.modal-head h2 { margin: 0; }
+.tag-list { list-style: none; margin: 0.75rem 0 1rem; padding: 0; display: grid; gap: 0.25rem; }
+.tag-list li {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-left: 0.75rem; border-radius: var(--radius-sm); background: var(--bg); font-weight: 700;
+}
+.modal-error { margin-top: 0.75rem; color: var(--danger); font-weight: 600; }

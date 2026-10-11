@@ -1,9 +1,10 @@
 {#
   Campos do formulário de tarefa, compartilhados entre criar e editar.
   mode: "new" (escolhe prazo ou repetição), "task" (só prazo) ou "recurring" (só repetição).
-  t: tarefa sendo editada, ou None.
+  tags: tags do usuário; t: tarefa sendo editada, ou None.
+  O modal de tags (tag_dialog) fica fora do <form>, porque tem formulários próprios.
 #}
-{% macro task_fields(mode, labels, rewards, weekday_labels, t=None) %}
+{% macro task_fields(mode, labels, rewards, weekday_labels, tags, t=None) %}
   <label class="sr-only" for="title">Título</label>
   <input id="title" name="title" type="text" placeholder="O que precisa ser feito?" maxlength="120"
          required autocomplete="off" value="{{ t.title if t else '' }}">
@@ -18,6 +19,23 @@
           <span>{{ label }}<small>{{ rewards[key] }} gold</small></span>
         </label>
       {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset class="difficulty">
+    <legend>Tag</legend>
+    <div class="tag-options" id="tag-options">
+      <label class="tag-option">
+        <input type="radio" name="tag_id" value="" {% if not t or not t.tag_id %}checked{% endif %}>
+        <span>Nenhuma</span>
+      </label>
+      {% for tag in tags %}
+        <label class="tag-option">
+          <input type="radio" name="tag_id" value="{{ tag.id }}" {% if t and t.tag_id == tag.id %}checked{% endif %}>
+          <span>{{ tag.name }}</span>
+        </label>
+      {% endfor %}
+      <button class="tag-manage" type="button" data-open-tags>Gerenciar</button>
     </div>
   </fieldset>
 
@@ -52,4 +70,38 @@
       <input type="date" name="due_date" value="{{ t.due_date.isoformat() if t and t.due_date else '' }}">
     </label>
   {% endif %}
+{% endmacro %}
+
+
+{% macro tag_dialog(tags) %}
+<dialog class="modal" id="tag-dialog" aria-labelledby="tag-dialog-title">
+  <div class="modal-head">
+    <h2 id="tag-dialog-title">Tags</h2>
+    <form method="dialog">
+      <button class="icon-btn" aria-label="Fechar">✕</button>
+    </form>
+  </div>
+  <p class="hint">Remover uma tag não apaga tarefas: elas só ficam sem tag.</p>
+  <ul class="tag-list" id="tag-list" data-delete-url="{{ url_for('delete_tag', tag_id=0) }}">
+    {% for tag in tags %}
+      <li>
+        <span>{{ tag.name }}</span>
+        <form method="post" action="{{ url_for('delete_tag', tag_id=tag.id) }}" data-tag-id="{{ tag.id }}" data-tag-name="{{ tag.name }}">
+          <input type="hidden" name="next" value="{{ request.path }}">
+          <button class="icon-btn" type="submit" aria-label="Remover tag {{ tag.name }}">✕</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+  <form class="form-row" id="tag-add" method="post" action="{{ url_for('add_tag') }}">
+    <input type="hidden" name="next" value="{{ request.path }}">
+    <label class="field field-grow">
+      <span>Nova tag</span>
+      <input name="name" type="text" maxlength="30" required autocomplete="off">
+    </label>
+    <button class="btn btn-primary" type="submit">Adicionar</button>
+  </form>
+  <p class="modal-error" id="tag-error" role="alert" hidden></p>
+</dialog>
+<script src="{{ url_for('static', filename='tags.js') }}"></script>
 {% endmacro %}

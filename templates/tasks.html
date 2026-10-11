@@ -1,14 +1,15 @@
 {% extends "base.html" %}
-{% from "_task_fields.html" import task_fields %}
+{% from "_task_fields.html" import task_fields, tag_dialog %}
 {% block title %}Tarefas · Gold Quest{% endblock %}
 {% block content %}
 <h1>Tarefas</h1>
 
 <form class="panel task-form" method="post" action="{{ url_for('add_task') }}">
-  {{ task_fields('new', labels, rewards, weekday_labels) }}
+  {{ task_fields('new', labels, rewards, weekday_labels, tags) }}
   <button class="btn btn-primary" type="submit">Adicionar tarefa</button>
   <p class="hint" id="form-hint" data-dynamic>No prazo: +20% de gold. Atrasada: metade.</p>
 </form>
+{{ tag_dialog(tags) }}
 
 {% if today_habits %}
 <section>
@@ -28,6 +29,7 @@
           <p class="task-title">{{ r.title }}</p>
           <p class="task-meta">
             <span class="chip chip-{{ r.difficulty }}">{{ labels[r.difficulty] }}</span>
+            {% if r.tag %}<span class="tag-chip">#{{ r.tag.name }}</span>{% endif %}
             <span>🔁 {{ r.days_label() }}</span>
             {% if r.penalize and not feito %}<span class="penalty" title="Perde {{ r.penalty() }} gold se não fizer hoje">⚠ −{{ r.penalty() }}</span>{% endif %}
           </p>
@@ -56,6 +58,7 @@
           <p class="task-title">{{ r.title }}</p>
           <p class="task-meta">
             <span class="chip chip-{{ r.difficulty }}">{{ labels[r.difficulty] }}</span>
+            {% if r.tag %}<span class="tag-chip">#{{ r.tag.name }}</span>{% endif %}
             {% if feito %}<span>Feito em {{ feito.date|br_date }}</span>
             {% else %}<span>📅 Até o fim de {{ month_label }}</span>{% endif %}
             {% if r.penalize and not feito %}<span class="penalty" title="Perde {{ r.penalty() }} gold se o mês acabar sem fazer">⚠ −{{ r.penalty() }}</span>{% endif %}
@@ -82,6 +85,7 @@
             <p class="task-title">{{ t.title }}</p>
             <p class="task-meta">
               <span class="chip chip-{{ t.difficulty }}">{{ labels[t.difficulty] }}</span>
+              {% if t.tag %}<span class="tag-chip">#{{ t.tag.name }}</span>{% endif %}
               {% if status == 'late' %}<span class="due due-late">Atrasada desde {{ t.due_date|br_date }}</span>
               {% elif status == 'today' %}<span class="due due-today">Vence hoje</span>
               {% elif status == 'future' %}<span class="due">Até {{ t.due_date|br_date }}</span>{% endif %}
@@ -114,6 +118,7 @@
           <p class="task-title">{{ r.title }}</p>
           <p class="task-meta">
             <span class="chip chip-{{ r.difficulty }}">{{ labels[r.difficulty] }}</span>
+            {% if r.tag %}<span class="tag-chip">#{{ r.tag.name }}</span>{% endif %}
             <span>{{ r.days_label() }}</span>
             {% if r.penalize %}<span class="penalty" title="Perde {{ r.penalty() }} gold a cada dia programado sem fazer">⚠ −{{ r.penalty() }}</span>{% endif %}
           </p>

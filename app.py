@@ -4,19 +4,22 @@ import secrets
 from datetime import date, datetime, timedelta
 from urllib.parse import urlparse
 
-from flask import Flask, abort, flash, redirect, render_template, request, url_for
+from flask import Flask, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import LoginManager, current_user, login_user, logout_user
 from sqlalchemy import func, inspect, text
 
 from models import (
+    DEFAULT_TAGS,
     DIFFICULTY_LABELS,
     DIFFICULTY_REWARDS,
     MONTH_LABELS,
     WEEKDAY_LABELS,
     InventoryItem,
+    MAX_TAGS,
     RecurringCompletion,
     RecurringTask,
     ShopItem,
+    Tag,
     Task,
     Transaction,
     User,
@@ -100,6 +103,14 @@ def seed_shop(user):
     ])
 
 
+def seed_tags(user):
+    db.session.add_all([Tag(user_id=user.id, name=name) for name in DEFAULT_TAGS])
+
+
+def user_tags():
+    return Tag.query.filter_by(user_id=current_user.id).order_by(func.lower(Tag.name)).all()
+
+
 def upgrade_db():
     """Adiciona colunas novas em bancos criados por versões anteriores."""
     insp = inspect(db.engine)
@@ -137,6 +148,17 @@ def upgrade_db():
             conn.execute(text(
                 "ALTER TABLE recurring_task ADD COLUMN penalize BOOLEAN NOT NULL DEFAULT 0"
             ))
+        if "tag_id" not in rec_cols:
+            conn.execute(text(
+                "ALTER TABLE recurring_task ADD COLUMN tag_id INTEGER REFERENCES tag(id)"
+            ))
+        if "tag_id" not in task_cols:
+            conn.execute(text("ALTER TABLE task ADD COLUMN tag_id INTEGER REFERENCES tag(id)"))
+            # Contas criadas antes das tags ganham as padrão, uma única vez
+            for name in DEFAULT_TAGS:
+                conn.execute(text(
+                    'INSERT INTO tag (user_id, name, created_at) SELECT id, :name, :agora FROM "user"'
+                ), {"name": name, "agora": datetime.now().isoformat(sep=" ")})
         if "last_review_date" not in user_cols:
             conn.execute(text('ALTER TABLE "user" ADD COLUMN last_review_date DATE'))
         # Versões de um usuário só não tinham dono nos registros
@@ -271,6 +293,7 @@ def register():
         claimed = first_user and claim_legacy_data(user)
         if not claimed:
             seed_shop(user)
+        seed_tags(user)
         db.session.commit()
 
         login_user(user, remember=True)
@@ -357,6 +380,7 @@ def tasks():
         monthly=monthly,
         month_done=sum(1 for _, c in monthly if c),
         month_label=MONTH_LABELS[today.month - 1],
+        tags=user_tags(),
         weekday_labels=WEEKDAY_LABELS,
         today=today,
         labels=DIFFICULTY_LABELS,
@@ -377,7 +401,13 @@ def parse_task_form(form, kind):
     if difficulty not in DIFFICULTY_REWARDS:
         difficulty = "media"
     penalize = bool(form.get("penalize"))
-    data = {"title": title[:120], "difficulty": difficulty, "penalize": penalize}
+    tag_id = None
+    tag_raw = form.get("tag_id", "")
+    if tag_raw.isdigit():
+        tag = db.session.get(Tag, int(tag_raw))
+        if tag is not None and tag.user_id == current_user.id:
+            tag_id = tag.id
+    data = {"title": title[:120], "difficulty": difficulty, "penalize": penalize, "tag_id": tag_id}
 
     monthly = form.get("repeat") == "monthly"
     weekdays = [] if monthly else sorted(
@@ -448,6 +478,7 @@ def edit_task(task_id):
     return render_template(
         "edit_task.html", item=task, mode="task",
         labels=DIFFICULTY_LABELS, rewards=DIFFICULTY_REWARDS, weekday_labels=WEEKDAY_LABELS,
+        tags=user_tags(),
     )
 
 
@@ -475,6 +506,49 @@ def delete_task(task_id):
     db.session.commit()
     flash("Tarefa excluída.", "ok")
     return redirect(url_for("tasks"))
+
+
+# ---------- Tags ----------
+# Usadas pelo modal do formulário via fetch (respostas JSON); sem JavaScript, os
+# formulários do modal também funcionam e voltam para a página de origem.
+
+def wants_json():
+    return request.headers.get("Accept") == "application/json"
+
+
+def tag_response(payload=None, error=None):
+    if wants_json():
+        return (jsonify(error=error), 400) if error else jsonify(payload)
+    if error:
+        flash(error, "error")
+    return redirect(safe_next(request.form.get("next")) or url_for("tasks"))
+
+
+@app.post("/tags")
+def add_tag():
+    name = " ".join(request.form.get("name", "").split())[:30]
+    if not name:
+        return tag_response(error="Dê um nome para a tag.")
+    tags = user_tags()
+    if any(t.name.lower() == name.lower() for t in tags):
+        return tag_response(error=f"A tag “{name}” já existe.")
+    if len(tags) >= MAX_TAGS:
+        return tag_response(error=f"Limite de {MAX_TAGS} tags atingido.")
+    tag = Tag(user_id=current_user.id, name=name)
+    db.session.add(tag)
+    db.session.commit()
+    return tag_response({"id": tag.id, "name": tag.name})
+
+
+@app.post("/tags/<int:tag_id>/excluir")
+def delete_tag(tag_id):
+    tag = get_owned(Tag, tag_id)
+    # As tarefas continuam existindo, só ficam sem tag
+    for model in (Task, RecurringTask):
+        model.query.filter_by(user_id=current_user.id, tag_id=tag.id).update({"tag_id": None})
+    db.session.delete(tag)
+    db.session.commit()
+    return tag_response({"id": tag_id})
 
 
 # ---------- Recorrentes ----------
@@ -521,6 +595,7 @@ def edit_recurring(rec_id):
     return render_template(
         "edit_task.html", item=rec, mode="recurring",
         labels=DIFFICULTY_LABELS, rewards=DIFFICULTY_REWARDS, weekday_labels=WEEKDAY_LABELS,
+        tags=user_tags(),
     )
 
 

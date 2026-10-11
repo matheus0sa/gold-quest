@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task_fields.html" import task_fields %}
+{% from "_task_fields.html" import task_fields, tag_dialog %}
 {% block title %}Editar tarefa · Gold Quest{% endblock %}
 {% block content %}
 <h1>Editar tarefa</h1>
@@ -11,7 +11,7 @@
 {% endif %}
 
 <form class="panel task-form" method="post" action="{{ action }}">
-  {{ task_fields(mode, labels, rewards, weekday_labels, item) }}
+  {{ task_fields(mode, labels, rewards, weekday_labels, tags, item) }}
   <p class="hint" id="form-hint">
     {% if mode == 'recurring' %}Mudanças valem daqui em diante; o gold já ganho não muda.
     {% else %}No prazo: +20% de gold. Atrasada: metade.{% endif %}
@@ -21,6 +21,7 @@
     <button class="btn btn-primary" type="submit">Salvar</button>
   </div>
 </form>
+{{ tag_dialog(tags) }}
 
 <script src="{{ url_for('static', filename='task_form.js') }}"></script>
 {% endblock %}

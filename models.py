@@ -15,6 +15,9 @@ LATE_PENALTY = 0.5    # metade do gold se concluir atrasado
 MISSED_PENALTY = 0.10  # tarefa com penalidade não feita: perde 10% do valor base
 REVIEW_MAX_DAYS = 7    # a revisão diária olha no máximo uma semana para trás
 
+DEFAULT_TAGS = ["estudo", "faxina", "fitness", "trabalho"]  # toda conta nova começa com estas
+MAX_TAGS = 30
+
 
 def penalty_for(difficulty):
     return max(1, round(DIFFICULTY_REWARDS.get(difficulty, 10) * MISSED_PENALTY))
@@ -46,6 +49,18 @@ def user_fk():
     return db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
 
 
+def tag_fk():
+    """Tag opcional de uma tarefa (cada tarefa tem no máximo uma)."""
+    return db.Column(db.Integer, db.ForeignKey("tag.id"), nullable=True)
+
+
+class Tag(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = user_fk()
+    name = db.Column(db.String(30), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = user_fk()
@@ -58,6 +73,8 @@ class Task(db.Model):
     reward_earned = db.Column(db.Integer, nullable=True)
     penalize = db.Column(db.Boolean, nullable=False, default=False)
     penalized_at = db.Column(db.Date, nullable=True)  # quando a penalidade foi cobrada
+    tag_id = tag_fk()
+    tag = db.relationship("Tag")
 
     def penalty(self):
         return penalty_for(self.difficulty)
@@ -134,6 +151,8 @@ class RecurringTask(db.Model):
     frequency = db.Column(db.String(10), nullable=False, default="weekly")
     weekdays = db.Column(db.String(20), nullable=False, default="")  # ex.: "0,2,4"; vazio se mensal
     penalize = db.Column(db.Boolean, nullable=False, default=False)
+    tag_id = tag_fk()
+    tag = db.relationship("Tag")
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
     completions = db.relationship(
         "RecurringCompletion", backref="task", cascade="all, delete-orphan", lazy="dynamic"
