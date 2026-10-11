@@ -11,6 +11,7 @@ from sqlalchemy import func, inspect, text
 from models import (
     DIFFICULTY_LABELS,
     DIFFICULTY_REWARDS,
+    MONTH_LABELS,
     WEEKDAY_LABELS,
     InventoryItem,
     RecurringCompletion,
@@ -128,6 +129,10 @@ def upgrade_db():
             conn.execute(text("ALTER TABLE task ADD COLUMN penalize BOOLEAN NOT NULL DEFAULT 0"))
         if "penalized_at" not in task_cols:
             conn.execute(text("ALTER TABLE task ADD COLUMN penalized_at DATE"))
+        if "frequency" not in rec_cols:
+            conn.execute(text(
+                "ALTER TABLE recurring_task ADD COLUMN frequency VARCHAR(10) NOT NULL DEFAULT 'weekly'"
+            ))
         if "penalize" not in rec_cols:
             conn.execute(text(
                 "ALTER TABLE recurring_task ADD COLUMN penalize BOOLEAN NOT NULL DEFAULT 0"
@@ -312,6 +317,7 @@ def review():
         items=items,
         yesterday=today - timedelta(days=1),
         weekday_labels=WEEKDAY_LABELS,
+        month_labels=MONTH_LABELS,
         labels=DIFFICULTY_LABELS,
     )
 
@@ -338,6 +344,9 @@ def tasks():
         .all()
     )
     today_habits = [r for r in recurring if r.is_scheduled(today)]
+    # Mensais: (tarefa, conclusão neste mês ou None), pendentes primeiro
+    monthly = [(r, r.done_in_month(today)) for r in recurring if r.is_monthly]
+    monthly.sort(key=lambda pair: pair[1] is not None)
     return render_template(
         "tasks.html",
         pending=pending,
@@ -345,6 +354,9 @@ def tasks():
         recurring=recurring,
         today_habits=today_habits,
         today_done=sum(1 for r in today_habits if r.is_done_on(today)),
+        monthly=monthly,
+        month_done=sum(1 for _, c in monthly if c),
+        month_label=MONTH_LABELS[today.month - 1],
         weekday_labels=WEEKDAY_LABELS,
         today=today,
         labels=DIFFICULTY_LABELS,
@@ -365,16 +377,20 @@ def add_task():
     if difficulty not in DIFFICULTY_REWARDS:
         difficulty = "media"
 
-    # Se marcou dias da semana, vira tarefa recorrente
+    # Mensal ou com dias da semana marcados: vira tarefa recorrente
+    monthly = request.form.get("repeat") == "monthly"
     weekdays = sorted({int(d) for d in request.form.getlist("weekdays") if d.isdigit() and 0 <= int(d) <= 6})
-    if penalize and not weekdays and not due_raw:
-        flash("Para ter penalidade, a tarefa precisa de um prazo ou de dias para repetir.", "error")
+    if monthly:
+        weekdays = []
+    if penalize and not monthly and not weekdays and not due_raw:
+        flash("Para ter penalidade, a tarefa precisa de um prazo ou de repetição.", "error")
         return redirect(url_for("tasks"))
-    if weekdays:
+    if monthly or weekdays:
         db.session.add(RecurringTask(
             user_id=current_user.id,
             title=title[:120],
             difficulty=difficulty,
+            frequency="monthly" if monthly else "weekly",
             weekdays=",".join(str(d) for d in weekdays),
             penalize=penalize,
         ))
@@ -432,10 +448,13 @@ def complete_recurring(rec_id):
     rec = get_owned(RecurringTask, rec_id)
     today = date.today()
 
-    if not rec.is_scheduled(today):
+    if rec.is_monthly:
+        if rec.done_in_month(today):
+            return redirect(url_for("tasks"))
+    elif not rec.is_scheduled(today):
         flash(f"“{rec.title}” não está programada para hoje.", "error")
         return redirect(url_for("tasks"))
-    if rec.is_done_on(today):
+    elif rec.is_done_on(today):
         return redirect(url_for("tasks"))
 
     reward = rec.reward()
@@ -458,11 +477,13 @@ def delete_recurring(rec_id):
 
 @app.route("/semana")
 def week():
-    recurring = (
+    all_recurring = (
         RecurringTask.query.filter_by(user_id=current_user.id)
         .order_by(RecurringTask.title)
         .all()
     )
+    recurring = [r for r in all_recurring if not r.is_monthly]
+    monthly = [r for r in all_recurring if r.is_monthly]
     days = []
     for i, label in enumerate(WEEKDAY_LABELS):
         tasks_day = [r for r in recurring if i in r.weekday_list]
@@ -476,6 +497,7 @@ def week():
     return render_template(
         "week.html",
         recurring=recurring,
+        monthly=monthly,
         days=days,
         max_count=max_count,
         today_index=date.today().weekday(),

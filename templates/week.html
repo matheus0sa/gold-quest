@@ -72,7 +72,28 @@
       {% endfor %}
     </p>
   </section>
-{% else %}
+{% elif not monthly %}
   <p class="empty">Nenhuma tarefa recorrente ainda. Crie uma em <a href="{{ url_for('tasks') }}">Tarefas</a> marcando os dias em que ela se repete.</p>
+{% endif %}
+
+{% if monthly %}
+  <section>
+    <h2>Mensais <span class="count">{{ monthly|length }}</span></h2>
+    <ul class="list">
+      {% for r in monthly %}
+        <li class="list-row">
+          <span class="row-emoji" aria-hidden="true">📅</span>
+          <div class="task-body">
+            <p class="task-title">{{ r.title }}</p>
+            <p class="task-meta">
+              <span class="chip chip-{{ r.difficulty }}">{{ labels[r.difficulty] }}</span>
+              <span>1x por mês, qualquer dia</span>
+            </p>
+          </div>
+          <span class="reward">+{{ r.reward() }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
 {% endif %}
 {% endblock %}

@@ -390,3 +390,6 @@ fieldset.difficulty legend { font-size: 0.9rem; font-weight: 600; color: var(--m
 .answer-no input:checked + span.has-penalty { border-color: var(--danger); background: var(--danger); }
 .answer-option input:focus-visible + span { outline: 3px solid var(--gold); outline-offset: 2px; }
 .review-submit { margin-top: 1.5rem; }
+
+/* ---------- Mensais ---------- */
+.repeat-monthly { margin-top: 0.6rem; }

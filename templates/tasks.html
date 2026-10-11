@@ -29,6 +29,10 @@
         </label>
       {% endfor %}
     </div>
+    <label class="checkbox repeat-monthly">
+      <input type="checkbox" name="repeat" value="monthly">
+      <span>Uma vez por mês, em qualquer dia</span>
+    </label>
   </fieldset>
 
   <label class="checkbox">
@@ -66,6 +70,35 @@
             <span class="chip chip-{{ r.difficulty }}">{{ labels[r.difficulty] }}</span>
             <span>🔁 {{ r.days_label() }}</span>
             {% if r.penalize and not feito %}<span class="penalty" title="Perde {{ r.penalty() }} gold se não fizer hoje">⚠ −{{ r.penalty() }}</span>{% endif %}
+          </p>
+        </div>
+        <span class="reward">{% if feito %}✓ {% endif %}+{{ r.reward() }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if monthly %}
+<section>
+  <h2>Este mês <span class="count">{{ month_done }}/{{ monthly|length }}</span></h2>
+  <ul class="task-list">
+    {% for r, feito in monthly %}
+      <li class="task{% if feito %} is-complete{% endif %}">
+        {% if feito %}
+          <span class="check is-checked" aria-label="Feito em {{ feito.date|br_date }}"></span>
+        {% else %}
+          <form method="post" action="{{ url_for('complete_recurring', rec_id=r.id) }}">
+            <button class="check" type="submit" aria-label="Concluir {{ r.title }}"></button>
+          </form>
+        {% endif %}
+        <div class="task-body">
+          <p class="task-title">{{ r.title }}</p>
+          <p class="task-meta">
+            <span class="chip chip-{{ r.difficulty }}">{{ labels[r.difficulty] }}</span>
+            {% if feito %}<span>Feito em {{ feito.date|br_date }}</span>
+            {% else %}<span>📅 Até o fim de {{ month_label }}</span>{% endif %}
+            {% if r.penalize and not feito %}<span class="penalty" title="Perde {{ r.penalty() }} gold se o mês acabar sem fazer">⚠ −{{ r.penalty() }}</span>{% endif %}
           </p>
         </div>
         <span class="reward">{% if feito %}✓ {% endif %}+{{ r.reward() }}</span>
@@ -149,18 +182,30 @@
 </section>
 {% endif %}
 <script>
-  // Ao marcar dias da semana, o prazo deixa de fazer sentido
+  // Ao escolher repetição, o prazo deixa de fazer sentido.
+  // Mensal e dias da semana são exclusivos: marcar um desmarca o outro.
   const dias = document.querySelectorAll('input[name="weekdays"]');
+  const mensal = document.querySelector('input[name="repeat"]');
   const prazo = document.getElementById('due-field');
   const dica = document.getElementById('form-hint');
   function atualizar() {
-    const repete = [...dias].some(d => d.checked);
+    const semanal = [...dias].some(d => d.checked);
+    const repete = semanal || mensal.checked;
     prazo.hidden = repete;
     prazo.querySelector('input').disabled = repete;
-    dica.textContent = repete
-      ? 'Aparece em "Hoje" nos dias marcados e dá gold toda vez.'
-      : 'No prazo: +20% de gold. Atrasada: metade.';
+    dica.textContent = mensal.checked
+      ? 'Aparece em "Este mês" até ser feita e dá gold uma vez por mês.'
+      : semanal
+        ? 'Aparece em "Hoje" nos dias marcados e dá gold toda vez.'
+        : 'No prazo: +20% de gold. Atrasada: metade.';
   }
-  dias.forEach(d => d.addEventListener('change', atualizar));
+  dias.forEach(d => d.addEventListener('change', () => {
+    if (d.checked) mensal.checked = false;
+    atualizar();
+  }));
+  mensal.addEventListener('change', () => {
+    if (mensal.checked) dias.forEach(d => { d.checked = false; });
+    atualizar();
+  });
 </script>
 {% endblock %}

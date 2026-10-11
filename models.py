@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
@@ -110,15 +110,29 @@ class Transaction(db.Model):
 
 
 WEEKDAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]  # date.weekday(): 0 = segunda
+MONTH_LABELS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+                "agosto", "setembro", "outubro", "novembro", "dezembro"]
+
+
+def month_bounds(day):
+    """Primeiro e último dia do mês de `day`."""
+    first = day.replace(day=1)
+    next_first = (first + timedelta(days=32)).replace(day=1)
+    return first, next_first - timedelta(days=1)
 
 
 class RecurringTask(db.Model):
-    """Hábito que se repete em dias da semana escolhidos (ex.: academia seg/qua/sex)."""
+    """
+    Tarefa que se repete:
+      - "weekly": em dias da semana escolhidos (ex.: academia seg/qua/sex);
+      - "monthly": uma vez por mês, em qualquer dia (ex.: limpar janelas).
+    """
     id = db.Column(db.Integer, primary_key=True)
     user_id = user_fk()
     title = db.Column(db.String(120), nullable=False)
     difficulty = db.Column(db.String(10), nullable=False, default="media")
-    weekdays = db.Column(db.String(20), nullable=False)  # ex.: "0,2,4"
+    frequency = db.Column(db.String(10), nullable=False, default="weekly")
+    weekdays = db.Column(db.String(20), nullable=False, default="")  # ex.: "0,2,4"; vazio se mensal
     penalize = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
     completions = db.relationship(
@@ -126,10 +140,16 @@ class RecurringTask(db.Model):
     )
 
     @property
+    def is_monthly(self):
+        return self.frequency == "monthly"
+
+    @property
     def weekday_list(self):
         return [int(d) for d in self.weekdays.split(",") if d != ""]
 
     def days_label(self):
+        if self.is_monthly:
+            return "1x por mês"
         days = self.weekday_list
         if len(days) == 7:
             return "Todo dia"
@@ -140,7 +160,13 @@ class RecurringTask(db.Model):
         return ", ".join(WEEKDAY_LABELS[d] for d in days)
 
     def is_scheduled(self, day):
-        return day.weekday() in self.weekday_list
+        """Programada para um dia específico (só as semanais têm dias)."""
+        return not self.is_monthly and day.weekday() in self.weekday_list
+
+    def done_in_month(self, day):
+        """Conclusão no mês de `day`, ou None."""
+        first, last = month_bounds(day)
+        return self.completions.filter(RecurringCompletion.date.between(first, last)).first()
 
     def is_done_on(self, day):
         return self.completions.filter_by(date=day).first() is not None

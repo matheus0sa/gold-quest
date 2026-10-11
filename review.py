@@ -4,13 +4,22 @@ Revisão diária.
 Na primeira visita do dia, o usuário confirma o que fez nos dias anteriores que
 ainda não revisou (no máximo REVIEW_MAX_DAYS para trás). Entram:
   - recorrentes programadas para aquele dia e não marcadas;
+  - mensais não feitas num mês que terminou (no mês de criação, sem penalidade);
   - tarefas únicas cujo prazo caiu naquele dia e continuam pendentes.
 "Fiz" paga o gold normal (no prazo). "Não fiz" cobra a penalidade, se a tarefa tiver.
 """
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from models import REVIEW_MAX_DAYS, RecurringCompletion, RecurringTask, Task, db
+from models import (
+    MONTH_LABELS,
+    REVIEW_MAX_DAYS,
+    RecurringCompletion,
+    RecurringTask,
+    Task,
+    db,
+    month_bounds,
+)
 
 
 @dataclass
@@ -49,6 +58,8 @@ def pending_items(user, today):
 
     items = []
     recurring = RecurringTask.query.filter_by(user_id=user.id).all()
+    weekly = [r for r in recurring if not r.is_monthly]
+    monthly = [r for r in recurring if r.is_monthly]
     done = {
         (c.recurring_id, c.date)
         for c in RecurringCompletion.query.join(RecurringTask).filter(
@@ -58,7 +69,7 @@ def pending_items(user, today):
     }
     day = start
     while day <= end:
-        for rec in recurring:
+        for rec in weekly:
             if rec.created_at.date() <= day and rec.is_scheduled(day) and (rec.id, day) not in done:
                 items.append(ReviewItem(
                     key=f"rec-{rec.id}-{day.isoformat()}",
@@ -67,6 +78,18 @@ def pending_items(user, today):
                     reward=rec.reward(),
                     penalty=rec.penalty() if rec.penalize else 0,
                 ))
+        if (day + timedelta(days=1)).day == 1:  # último dia do mês: fecha as mensais
+            first, _ = month_bounds(day)
+            for rec in monthly:
+                created = rec.created_at.date()
+                if created <= day and not rec.done_in_month(day):
+                    items.append(ReviewItem(
+                        key=f"mon-{rec.id}-{day.isoformat()}",
+                        day=day,
+                        task=rec,
+                        reward=rec.reward(),
+                        penalty=rec.penalty() if rec.penalize and created < first else 0,
+                    ))
         day += timedelta(days=1)
 
     overdue = Task.query.filter(
@@ -100,7 +123,10 @@ def apply_review(user, answers, today):
     earned = lost = 0
     for item in pending_items(user, today):
         task = item.task
-        label = item.day.strftime("%d/%m")
+        if item.recurring and task.is_monthly:
+            label = MONTH_LABELS[item.day.month - 1]
+        else:
+            label = item.day.strftime("%d/%m")
         if answers.get(item.key) == "fiz":
             if item.recurring:
                 db.session.add(RecurringCompletion(task=task, date=item.day, reward=item.reward))

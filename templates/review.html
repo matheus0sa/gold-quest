@@ -19,7 +19,7 @@
               <p class="task-title">{{ t.title }}</p>
               <p class="task-meta">
                 <span class="chip chip-{{ t.difficulty }}">{{ labels[t.difficulty] }}</span>
-                <span>{% if item.recurring %}🔁 {{ t.days_label() }}{% else %}Prazo {{ t.due_date|br_date }}{% endif %}</span>
+                <span>{% if item.recurring and t.is_monthly %}📅 Mensal de {{ month_labels[item.day.month - 1] }}{% elif item.recurring %}🔁 {{ t.days_label() }}{% else %}Prazo {{ t.due_date|br_date }}{% endif %}</span>
                 {% if item.penalty %}<span class="penalty">⚠ −{{ item.penalty }}</span>{% endif %}
               </p>
             </div>
