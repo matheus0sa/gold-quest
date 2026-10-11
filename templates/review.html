@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Revisão · Gold Quest{% endblock %}
+{% block content %}
+<h1>Revisão</h1>
+<p class="hint">Antes de começar o dia: estas tarefas ficaram sem marcar. Se você fez e esqueceu, ainda dá para ganhar o gold. As que têm ⚠ custam gold se não foram feitas.</p>
+
+<form method="post" action="{{ url_for('review') }}">
+  {% for day, day_items in items|groupby('day') %}
+    <section>
+      <h2 class="review-day">
+        {% if day == yesterday %}Ontem{% else %}{{ weekday_labels[day.weekday()] }}{% endif %}
+        <span class="count">{{ day|br_date }}</span>
+      </h2>
+      <ul class="list">
+        {% for item in day_items %}
+          {% set t = item.task %}
+          <li class="panel review-item">
+            <div class="task-body">
+              <p class="task-title">{{ t.title }}</p>
+              <p class="task-meta">
+                <span class="chip chip-{{ t.difficulty }}">{{ labels[t.difficulty] }}</span>
+                <span>{% if item.recurring %}🔁 {{ t.days_label() }}{% else %}Prazo {{ t.due_date|br_date }}{% endif %}</span>
+                {% if item.penalty %}<span class="penalty">⚠ −{{ item.penalty }}</span>{% endif %}
+              </p>
+            </div>
+            <div class="answer-options" role="radiogroup" aria-label="Você fez {{ t.title }}?">
+              <label class="answer-option">
+                <input type="radio" name="{{ item.key }}" value="fiz" required>
+                <span>Fiz<small>+{{ item.reward }} gold</small></span>
+              </label>
+              <label class="answer-option answer-no">
+                <input type="radio" name="{{ item.key }}" value="nao">
+                <span{% if item.penalty %} class="has-penalty"{% endif %}>Não fiz<small>{% if item.penalty %}−{{ item.penalty }} gold{% else %}sem penalidade{% endif %}</small></span>
+              </label>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endfor %}
+  <button class="btn btn-primary btn-block review-submit" type="submit">Concluir revisão</button>
+</form>
+{% endblock %}

@@ -39,5 +39,6 @@ outro computador, copie esse arquivo para a pasta do projeto. Para zerar tudo, a
 ## Ajustes
 
 - Recompensa por dificuldade: `models.py` (`DIFFICULTY_REWARDS`)
+- Penalidade e revisão diária: `models.py` (`MISSED_PENALTY`, `REVIEW_MAX_DAYS`), lógica em `review.py`
 - Preços dinâmicos: constantes no topo de `pricing.py`
 - Modo debug: defina `FLASK_DEBUG=1` antes de rodar

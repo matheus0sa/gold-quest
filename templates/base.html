@@ -35,7 +35,7 @@
         {% endfor %}
       </nav>
       <div class="topbar-end">
-        <div class="balance{% if ns.bump %} is-bumped{% endif %}" role="status" aria-label="Saldo: {{ gold }} gold">
+        <div class="balance{% if ns.bump %} is-bumped{% endif %}{% if gold < 0 %} is-negative{% endif %}" role="status" aria-label="Saldo: {{ gold }} gold">
           <span class="coin" aria-hidden="true"></span>
           <strong>{{ gold }}</strong>
         </div>

@@ -372,3 +372,21 @@ fieldset.difficulty legend { font-size: 0.9rem; font-weight: 600; color: var(--m
 .auth-switch { text-align: center; margin-top: 1rem; color: var(--muted); }
 .checkbox { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer; }
 .checkbox input { width: 1.1rem; height: 1.1rem; accent-color: var(--ink); }
+
+/* ---------- Penalidade e revisão ---------- */
+.penalty { color: var(--danger); font-weight: 700; }
+.balance.is-negative { background: var(--danger); }
+.review-day { text-transform: none; }
+.review-item { display: grid; gap: 0.6rem; padding: 0.85rem 1rem; }
+.answer-options { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.answer-option input { position: absolute; opacity: 0; pointer-events: none; }
+.answer-option span {
+  display: block; text-align: center; font-weight: 700; cursor: pointer;
+  padding: 0.6rem 0.5rem; border: 2px solid var(--line); border-radius: var(--radius-sm);
+}
+.answer-option small { display: block; font-size: 0.78rem; color: var(--muted); }
+.answer-option input:checked + span { border-color: var(--ink); background: var(--ink); color: #fff; }
+.answer-option input:checked + span small { color: inherit; }
+.answer-no input:checked + span.has-penalty { border-color: var(--danger); background: var(--danger); }
+.answer-option input:focus-visible + span { outline: 3px solid var(--gold); outline-offset: 2px; }
+.review-submit { margin-top: 1.5rem; }

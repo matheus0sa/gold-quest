@@ -31,6 +31,11 @@
     </div>
   </fieldset>
 
+  <label class="checkbox">
+    <input type="checkbox" name="penalize" value="1">
+    <span>Penalidade se não fizer: perde 10% do valor (precisa de prazo ou repetição)</span>
+  </label>
+
   <div class="form-row">
     <label class="field" id="due-field">
       <span>Prazo (opcional)</span>
@@ -60,6 +65,7 @@
           <p class="task-meta">
             <span class="chip chip-{{ r.difficulty }}">{{ labels[r.difficulty] }}</span>
             <span>🔁 {{ r.days_label() }}</span>
+            {% if r.penalize and not feito %}<span class="penalty" title="Perde {{ r.penalty() }} gold se não fizer hoje">⚠ −{{ r.penalty() }}</span>{% endif %}
           </p>
         </div>
         <span class="reward">{% if feito %}✓ {% endif %}+{{ r.reward() }}</span>
@@ -86,6 +92,7 @@
               {% if status == 'late' %}<span class="due due-late">Atrasada desde {{ t.due_date|br_date }}</span>
               {% elif status == 'today' %}<span class="due due-today">Vence hoje</span>
               {% elif status == 'future' %}<span class="due">Até {{ t.due_date|br_date }}</span>{% endif %}
+              {% if t.penalize and not t.penalized_at %}<span class="penalty" title="Perde {{ t.penalty() }} gold se passar do prazo">⚠ −{{ t.penalty() }}</span>{% endif %}
             </p>
           </div>
           <span class="reward" title="Gold ao concluir agora">+{{ t.calculate_reward(today) }}</span>
@@ -112,6 +119,7 @@
           <p class="task-meta">
             <span class="chip chip-{{ r.difficulty }}">{{ labels[r.difficulty] }}</span>
             <span>{{ r.days_label() }}</span>
+            {% if r.penalize %}<span class="penalty" title="Perde {{ r.penalty() }} gold a cada dia programado sem fazer">⚠ −{{ r.penalty() }}</span>{% endif %}
           </p>
         </div>
         <form method="post" action="{{ url_for('delete_recurring', rec_id=r.id) }}" onsubmit="return confirm('Excluir esta tarefa recorrente?')">

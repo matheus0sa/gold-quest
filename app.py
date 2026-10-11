@@ -23,6 +23,7 @@ from models import (
 )
 
 from pricing import DIAS_PARA_ESQUECER, calcular_preco
+from review import apply_review, mark_reviewed, needs_review, pending_items
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -54,6 +55,7 @@ login_manager.login_message = None  # a tela de login já se explica
 # Tabelas que pertencem a um usuário (todas ganham a coluna user_id)
 OWNED_TABLES = ["task", "recurring_task", "shop_item", "inventory_item", "transaction"]
 PUBLIC_ENDPOINTS = {"login", "register", "static"}
+REVIEW_EXEMPT = {"review", "logout"}  # acessíveis com a revisão do dia pendente
 USERNAME_RE = re.compile(r"^[a-z0-9._-]{3,30}$")
 MIN_PASSWORD = 8
 
@@ -64,10 +66,19 @@ def load_user(user_id):
 
 
 @app.before_request
-def require_login():
-    if request.endpoint in PUBLIC_ENDPOINTS or current_user.is_authenticated:
+def require_login_and_review():
+    if request.endpoint in PUBLIC_ENDPOINTS:
         return None
-    return login_manager.unauthorized()
+    if not current_user.is_authenticated:
+        return login_manager.unauthorized()
+    # Primeira visita do dia: revisar o que ficou para trás antes de seguir
+    today = date.today()
+    if request.endpoint not in REVIEW_EXEMPT and needs_review(current_user, today):
+        if pending_items(current_user, today):
+            return redirect(url_for("review"))
+        mark_reviewed(current_user, today)
+        db.session.commit()
+    return None
 
 
 # ---------- Helpers ----------
@@ -78,12 +89,6 @@ def get_owned(model, obj_id):
     if obj.user_id != current_user.id:
         abort(404)
     return obj
-
-
-def change_gold(amount, description):
-    """Altera o saldo e registra no histórico. Quem chama faz o commit."""
-    current_user.gold += amount
-    db.session.add(Transaction(user_id=current_user.id, amount=amount, description=description))
 
 
 def seed_shop(user):
@@ -116,6 +121,19 @@ def upgrade_db():
                 "(SELECT id FROM shop_item WHERE shop_item.name = inventory_item.name) "
                 "WHERE shop_item_id IS NULL"
             ))
+        task_cols = {c["name"] for c in insp.get_columns("task")}
+        rec_cols = {c["name"] for c in insp.get_columns("recurring_task")}
+        user_cols = {c["name"] for c in insp.get_columns("user")}
+        if "penalize" not in task_cols:
+            conn.execute(text("ALTER TABLE task ADD COLUMN penalize BOOLEAN NOT NULL DEFAULT 0"))
+        if "penalized_at" not in task_cols:
+            conn.execute(text("ALTER TABLE task ADD COLUMN penalized_at DATE"))
+        if "penalize" not in rec_cols:
+            conn.execute(text(
+                "ALTER TABLE recurring_task ADD COLUMN penalize BOOLEAN NOT NULL DEFAULT 0"
+            ))
+        if "last_review_date" not in user_cols:
+            conn.execute(text('ALTER TABLE "user" ADD COLUMN last_review_date DATE'))
         # Versões de um usuário só não tinham dono nos registros
         for table in OWNED_TABLES:
             if "user_id" not in {c["name"] for c in insp.get_columns(table)}:
@@ -240,7 +258,7 @@ def register():
             return render_template("register.html", username=username), 400
 
         first_user = User.query.count() == 0
-        user = User(username=username)
+        user = User(username=username, last_review_date=date.today() - timedelta(days=1))
         user.set_password(password)
         db.session.add(user)
         db.session.flush()  # gera o id
@@ -264,6 +282,38 @@ def register():
 def logout():
     logout_user()
     return redirect(url_for("login"))
+
+
+# ---------- Revisão diária ----------
+
+@app.route("/revisao", methods=["GET", "POST"])
+def review():
+    today = date.today()
+    items = pending_items(current_user, today)
+    if not items:
+        mark_reviewed(current_user, today)
+        db.session.commit()
+        return redirect(url_for("tasks"))
+
+    if request.method == "POST":
+        earned, lost = apply_review(current_user, request.form, today)
+        db.session.commit()
+        parts = []
+        if earned:
+            parts.append(f"+{earned} gold recuperado")
+        if lost:
+            parts.append(f"−{lost} gold de penalidade")
+        flash("Revisão concluída" + (": " + ", ".join(parts) if parts else "") + ".",
+              "gold" if earned else "ok")
+        return redirect(url_for("tasks"))
+
+    return render_template(
+        "review.html",
+        items=items,
+        yesterday=today - timedelta(days=1),
+        weekday_labels=WEEKDAY_LABELS,
+        labels=DIFFICULTY_LABELS,
+    )
 
 
 # ---------- Tarefas ----------
@@ -307,6 +357,7 @@ def add_task():
     title = request.form.get("title", "").strip()
     difficulty = request.form.get("difficulty", "media")
     due_raw = request.form.get("due_date", "").strip()
+    penalize = bool(request.form.get("penalize"))
 
     if not title:
         flash("Escreva um título para a tarefa.", "error")
@@ -316,12 +367,16 @@ def add_task():
 
     # Se marcou dias da semana, vira tarefa recorrente
     weekdays = sorted({int(d) for d in request.form.getlist("weekdays") if d.isdigit() and 0 <= int(d) <= 6})
+    if penalize and not weekdays and not due_raw:
+        flash("Para ter penalidade, a tarefa precisa de um prazo ou de dias para repetir.", "error")
+        return redirect(url_for("tasks"))
     if weekdays:
         db.session.add(RecurringTask(
             user_id=current_user.id,
             title=title[:120],
             difficulty=difficulty,
             weekdays=",".join(str(d) for d in weekdays),
+            penalize=penalize,
         ))
         db.session.commit()
         flash("Tarefa recorrente adicionada.", "ok")
@@ -336,7 +391,8 @@ def add_task():
             return redirect(url_for("tasks"))
 
     db.session.add(Task(
-        user_id=current_user.id, title=title[:120], difficulty=difficulty, due_date=due_date
+        user_id=current_user.id, title=title[:120], difficulty=difficulty,
+        due_date=due_date, penalize=penalize,
     ))
     db.session.commit()
     flash("Tarefa adicionada.", "ok")
@@ -353,7 +409,7 @@ def complete_task(task_id):
     task.done = True
     task.completed_at = datetime.now()
     task.reward_earned = reward
-    change_gold(reward, f"Tarefa concluída: {task.title}")
+    current_user.add_gold(reward, f"Tarefa concluída: {task.title}")
     db.session.commit()
 
     flash(f"+{reward} gold por concluir “{task.title}”", "gold")
@@ -384,7 +440,7 @@ def complete_recurring(rec_id):
 
     reward = rec.reward()
     db.session.add(RecurringCompletion(task=rec, date=today, reward=reward))
-    change_gold(reward, f"Recorrente concluída: {rec.title}")
+    current_user.add_gold(reward, f"Recorrente concluída: {rec.title}")
     db.session.commit()
 
     flash(f"+{reward} gold por “{rec.title}”", "gold")
@@ -466,7 +522,7 @@ def buy_item(item_id):
         flash(f"Faltam {price - current_user.gold} gold para comprar {item.name}.", "error")
         return redirect(url_for("shop"))
 
-    change_gold(-price, f"Compra: {item.name}")
+    current_user.add_gold(-price, f"Compra: {item.name}")
     db.session.add(InventoryItem(
         user_id=current_user.id, name=item.name, emoji=item.emoji,
         shop_item_id=item.id, price_paid=price,

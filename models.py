@@ -12,6 +12,12 @@ DIFFICULTY_LABELS = {"facil": "Fácil", "media": "Média", "dificil": "Difícil"
 
 ON_TIME_BONUS = 1.2   # +20% se concluir até o prazo
 LATE_PENALTY = 0.5    # metade do gold se concluir atrasado
+MISSED_PENALTY = 0.10  # tarefa com penalidade não feita: perde 10% do valor base
+REVIEW_MAX_DAYS = 7    # a revisão diária olha no máximo uma semana para trás
+
+
+def penalty_for(difficulty):
+    return max(1, round(DIFFICULTY_REWARDS.get(difficulty, 10) * MISSED_PENALTY))
 
 
 class User(UserMixin, db.Model):
@@ -20,6 +26,13 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     gold = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    # Último dia já revisado (ver review.py); None = nunca revisou
+    last_review_date = db.Column(db.Date, nullable=True)
+
+    def add_gold(self, amount, description):
+        """Altera o saldo e registra no histórico. Quem chama faz o commit."""
+        self.gold += amount
+        db.session.add(Transaction(user_id=self.id, amount=amount, description=description))
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -43,6 +56,11 @@ class Task(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
     completed_at = db.Column(db.DateTime, nullable=True)
     reward_earned = db.Column(db.Integer, nullable=True)
+    penalize = db.Column(db.Boolean, nullable=False, default=False)
+    penalized_at = db.Column(db.Date, nullable=True)  # quando a penalidade foi cobrada
+
+    def penalty(self):
+        return penalty_for(self.difficulty)
 
     def calculate_reward(self, today):
         base = DIFFICULTY_REWARDS.get(self.difficulty, 10)
@@ -101,6 +119,7 @@ class RecurringTask(db.Model):
     title = db.Column(db.String(120), nullable=False)
     difficulty = db.Column(db.String(10), nullable=False, default="media")
     weekdays = db.Column(db.String(20), nullable=False)  # ex.: "0,2,4"
+    penalize = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.now)
     completions = db.relationship(
         "RecurringCompletion", backref="task", cascade="all, delete-orphan", lazy="dynamic"
@@ -128,6 +147,9 @@ class RecurringTask(db.Model):
 
     def reward(self):
         return DIFFICULTY_REWARDS.get(self.difficulty, 10)
+
+    def penalty(self):
+        return penalty_for(self.difficulty)
 
 
 class RecurringCompletion(db.Model):
