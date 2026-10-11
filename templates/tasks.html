@@ -1,53 +1,13 @@
 {% extends "base.html" %}
+{% from "_task_fields.html" import task_fields %}
 {% block title %}Tarefas · Gold Quest{% endblock %}
 {% block content %}
 <h1>Tarefas</h1>
 
 <form class="panel task-form" method="post" action="{{ url_for('add_task') }}">
-  <label class="sr-only" for="title">Nova tarefa</label>
-  <input id="title" name="title" type="text" placeholder="O que precisa ser feito?" maxlength="120" required autocomplete="off">
-
-  <fieldset class="difficulty">
-    <legend>Dificuldade</legend>
-    <div class="diff-options">
-      {% for key, label in labels.items() %}
-        <label class="diff-option diff-{{ key }}">
-          <input type="radio" name="difficulty" value="{{ key }}" {% if key == 'media' %}checked{% endif %}>
-          <span>{{ label }}<small>{{ rewards[key] }} gold</small></span>
-        </label>
-      {% endfor %}
-    </div>
-  </fieldset>
-
-  <fieldset class="difficulty">
-    <legend>Repetir (opcional)</legend>
-    <div class="weekday-options">
-      {% for label in weekday_labels %}
-        <label class="weekday-option">
-          <input type="checkbox" name="weekdays" value="{{ loop.index0 }}">
-          <span>{{ label }}</span>
-        </label>
-      {% endfor %}
-    </div>
-    <label class="checkbox repeat-monthly">
-      <input type="checkbox" name="repeat" value="monthly">
-      <span>Uma vez por mês, em qualquer dia</span>
-    </label>
-  </fieldset>
-
-  <label class="checkbox">
-    <input type="checkbox" name="penalize" value="1">
-    <span>Penalidade se não fizer: perde 10% do valor (precisa de prazo ou repetição)</span>
-  </label>
-
-  <div class="form-row">
-    <label class="field" id="due-field">
-      <span>Prazo (opcional)</span>
-      <input type="date" name="due_date">
-    </label>
-    <button class="btn btn-primary" type="submit">Adicionar tarefa</button>
-  </div>
-  <p class="hint" id="form-hint">No prazo: +20% de gold. Atrasada: metade.</p>
+  {{ task_fields('new', labels, rewards, weekday_labels) }}
+  <button class="btn btn-primary" type="submit">Adicionar tarefa</button>
+  <p class="hint" id="form-hint" data-dynamic>No prazo: +20% de gold. Atrasada: metade.</p>
 </form>
 
 {% if today_habits %}
@@ -129,9 +89,12 @@
             </p>
           </div>
           <span class="reward" title="Gold ao concluir agora">+{{ t.calculate_reward(today) }}</span>
-          <form method="post" action="{{ url_for('delete_task', task_id=t.id) }}" onsubmit="return confirm('Excluir esta tarefa?')">
-            <button class="icon-btn" type="submit" aria-label="Excluir {{ t.title }}">✕</button>
-          </form>
+          <div class="row-actions">
+            <a class="icon-btn" href="{{ url_for('edit_task', task_id=t.id) }}" aria-label="Editar {{ t.title }}">✎</a>
+            <form method="post" action="{{ url_for('delete_task', task_id=t.id) }}" onsubmit="return confirm('Excluir esta tarefa?')">
+              <button class="icon-btn" type="submit" aria-label="Excluir {{ t.title }}">✕</button>
+            </form>
+          </div>
         </li>
       {% endfor %}
     </ul>
@@ -155,9 +118,12 @@
             {% if r.penalize %}<span class="penalty" title="Perde {{ r.penalty() }} gold a cada dia programado sem fazer">⚠ −{{ r.penalty() }}</span>{% endif %}
           </p>
         </div>
-        <form method="post" action="{{ url_for('delete_recurring', rec_id=r.id) }}" onsubmit="return confirm('Excluir esta tarefa recorrente?')">
-          <button class="icon-btn" type="submit" aria-label="Excluir {{ r.title }}">✕</button>
-        </form>
+        <div class="row-actions">
+          <a class="icon-btn" href="{{ url_for('edit_recurring', rec_id=r.id) }}" aria-label="Editar {{ r.title }}">✎</a>
+          <form method="post" action="{{ url_for('delete_recurring', rec_id=r.id) }}" onsubmit="return confirm('Excluir esta tarefa recorrente?')">
+            <button class="icon-btn" type="submit" aria-label="Excluir {{ r.title }}">✕</button>
+          </form>
+        </div>
       </li>
     {% endfor %}
   </ul>
@@ -181,31 +147,5 @@
   </ul>
 </section>
 {% endif %}
-<script>
-  // Ao escolher repetição, o prazo deixa de fazer sentido.
-  // Mensal e dias da semana são exclusivos: marcar um desmarca o outro.
-  const dias = document.querySelectorAll('input[name="weekdays"]');
-  const mensal = document.querySelector('input[name="repeat"]');
-  const prazo = document.getElementById('due-field');
-  const dica = document.getElementById('form-hint');
-  function atualizar() {
-    const semanal = [...dias].some(d => d.checked);
-    const repete = semanal || mensal.checked;
-    prazo.hidden = repete;
-    prazo.querySelector('input').disabled = repete;
-    dica.textContent = mensal.checked
-      ? 'Aparece em "Este mês" até ser feita e dá gold uma vez por mês.'
-      : semanal
-        ? 'Aparece em "Hoje" nos dias marcados e dá gold toda vez.'
-        : 'No prazo: +20% de gold. Atrasada: metade.';
-  }
-  dias.forEach(d => d.addEventListener('change', () => {
-    if (d.checked) mensal.checked = false;
-    atualizar();
-  }));
-  mensal.addEventListener('change', () => {
-    if (mensal.checked) dias.forEach(d => { d.checked = false; });
-    atualizar();
-  });
-</script>
+<script src="{{ url_for('static', filename='task_form.js') }}"></script>
 {% endblock %}

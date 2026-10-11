@@ -1,0 +1,55 @@
+{#
+  Campos do formulário de tarefa, compartilhados entre criar e editar.
+  mode: "new" (escolhe prazo ou repetição), "task" (só prazo) ou "recurring" (só repetição).
+  t: tarefa sendo editada, ou None.
+#}
+{% macro task_fields(mode, labels, rewards, weekday_labels, t=None) %}
+  <label class="sr-only" for="title">Título</label>
+  <input id="title" name="title" type="text" placeholder="O que precisa ser feito?" maxlength="120"
+         required autocomplete="off" value="{{ t.title if t else '' }}">
+
+  <fieldset class="difficulty">
+    <legend>Dificuldade</legend>
+    <div class="diff-options">
+      {% for key, label in labels.items() %}
+        <label class="diff-option diff-{{ key }}">
+          <input type="radio" name="difficulty" value="{{ key }}"
+                 {% if key == (t.difficulty if t else 'media') %}checked{% endif %}>
+          <span>{{ label }}<small>{{ rewards[key] }} gold</small></span>
+        </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  {% if mode != 'task' %}
+    {% set monthly = t is not none and t.is_monthly %}
+    <fieldset class="difficulty">
+      <legend>Repetir{% if mode == 'new' %} (opcional){% endif %}</legend>
+      <div class="weekday-options">
+        {% for label in weekday_labels %}
+          <label class="weekday-option">
+            <input type="checkbox" name="weekdays" value="{{ loop.index0 }}"
+                   {% if t and not monthly and loop.index0 in t.weekday_list %}checked{% endif %}>
+            <span>{{ label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <label class="checkbox repeat-monthly">
+        <input type="checkbox" name="repeat" value="monthly" {% if monthly %}checked{% endif %}>
+        <span>Uma vez por mês, em qualquer dia</span>
+      </label>
+    </fieldset>
+  {% endif %}
+
+  <label class="checkbox">
+    <input type="checkbox" name="penalize" value="1" {% if t and t.penalize %}checked{% endif %}>
+    <span>Penalidade se não fizer: perde 10% do valor{% if mode == 'new' %} (precisa de prazo ou repetição){% elif mode == 'task' %} (precisa de prazo){% endif %}</span>
+  </label>
+
+  {% if mode != 'recurring' %}
+    <label class="field" id="due-field">
+      <span>Prazo (opcional)</span>
+      <input type="date" name="due_date" value="{{ t.due_date.isoformat() if t and t.due_date else '' }}">
+    </label>
+  {% endif %}
+{% endmacro %}

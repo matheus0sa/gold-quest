@@ -393,3 +393,10 @@ fieldset.difficulty legend { font-size: 0.9rem; font-weight: 600; color: var(--m
 
 /* ---------- Mensais ---------- */
 .repeat-monthly { margin-top: 0.6rem; }
+
+/* ---------- Edição ---------- */
+.row-actions { display: flex; align-items: center; }
+a.btn, a.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
+}
+a.icon-btn:hover { color: var(--ink); }

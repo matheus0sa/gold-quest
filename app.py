@@ -364,55 +364,91 @@ def tasks():
     )
 
 
-@app.post("/tarefas")
-def add_task():
-    title = request.form.get("title", "").strip()
-    difficulty = request.form.get("difficulty", "media")
-    due_raw = request.form.get("due_date", "").strip()
-    penalize = bool(request.form.get("penalize"))
-
+def parse_task_form(form, kind):
+    """
+    Valida o formulário de tarefa, usado para criar e editar.
+    kind: "new" (o formulário decide se é recorrente), "task" ou "recurring".
+    Devolve (campos, None) ou (None, mensagem de erro).
+    """
+    title = form.get("title", "").strip()
     if not title:
-        flash("Escreva um título para a tarefa.", "error")
-        return redirect(url_for("tasks"))
+        return None, "Escreva um título para a tarefa."
+    difficulty = form.get("difficulty", "media")
     if difficulty not in DIFFICULTY_REWARDS:
         difficulty = "media"
+    penalize = bool(form.get("penalize"))
+    data = {"title": title[:120], "difficulty": difficulty, "penalize": penalize}
 
-    # Mensal ou com dias da semana marcados: vira tarefa recorrente
-    monthly = request.form.get("repeat") == "monthly"
-    weekdays = sorted({int(d) for d in request.form.getlist("weekdays") if d.isdigit() and 0 <= int(d) <= 6})
-    if monthly:
-        weekdays = []
-    if penalize and not monthly and not weekdays and not due_raw:
-        flash("Para ter penalidade, a tarefa precisa de um prazo ou de repetição.", "error")
-        return redirect(url_for("tasks"))
-    if monthly or weekdays:
-        db.session.add(RecurringTask(
-            user_id=current_user.id,
-            title=title[:120],
-            difficulty=difficulty,
-            frequency="monthly" if monthly else "weekly",
-            weekdays=",".join(str(d) for d in weekdays),
-            penalize=penalize,
-        ))
-        db.session.commit()
-        flash("Tarefa recorrente adicionada.", "ok")
-        return redirect(url_for("tasks"))
+    monthly = form.get("repeat") == "monthly"
+    weekdays = [] if monthly else sorted(
+        {int(d) for d in form.getlist("weekdays") if d.isdigit() and 0 <= int(d) <= 6}
+    )
+    recurring = (monthly or bool(weekdays)) if kind == "new" else kind == "recurring"
+
+    if recurring:
+        if not monthly and not weekdays:
+            return None, "Escolha os dias da semana ou a opção mensal."
+        data["frequency"] = "monthly" if monthly else "weekly"
+        data["weekdays"] = ",".join(str(d) for d in weekdays)
+        return data, None
 
     due_date = None
+    due_raw = form.get("due_date", "").strip()
     if due_raw:
         try:
             due_date = date.fromisoformat(due_raw)
         except ValueError:
-            flash("Data de prazo inválida.", "error")
-            return redirect(url_for("tasks"))
+            return None, "Data de prazo inválida."
+    if penalize and due_date is None:
+        return None, "Para ter penalidade, a tarefa precisa de um prazo ou de repetição."
+    data["due_date"] = due_date
+    return data, None
 
-    db.session.add(Task(
-        user_id=current_user.id, title=title[:120], difficulty=difficulty,
-        due_date=due_date, penalize=penalize,
-    ))
+
+@app.post("/tarefas")
+def add_task():
+    data, error = parse_task_form(request.form, "new")
+    if error:
+        flash(error, "error")
+        return redirect(url_for("tasks"))
+
+    if "frequency" in data:
+        db.session.add(RecurringTask(user_id=current_user.id, **data))
+        flash("Tarefa recorrente adicionada.", "ok")
+    else:
+        db.session.add(Task(user_id=current_user.id, **data))
+        flash("Tarefa adicionada.", "ok")
     db.session.commit()
-    flash("Tarefa adicionada.", "ok")
     return redirect(url_for("tasks"))
+
+
+@app.route("/tarefas/<int:task_id>/editar", methods=["GET", "POST"])
+def edit_task(task_id):
+    task = get_owned(Task, task_id)
+    if task.done:
+        flash("Tarefas concluídas não podem ser editadas.", "error")
+        return redirect(url_for("tasks"))
+
+    if request.method == "POST":
+        data, error = parse_task_form(request.form, "task")
+        new_due = data["due_date"] if data else None
+        if not error and new_due != task.due_date and new_due and new_due < date.today():
+            error = "O novo prazo não pode estar no passado."
+        if error:
+            flash(error, "error")
+            return redirect(url_for("edit_task", task_id=task.id))
+        if new_due != task.due_date:
+            task.penalized_at = None  # prazo novo, penalidade volta a valer
+        for field, value in data.items():
+            setattr(task, field, value)
+        db.session.commit()
+        flash("Tarefa atualizada.", "ok")
+        return redirect(url_for("tasks"))
+
+    return render_template(
+        "edit_task.html", item=task, mode="task",
+        labels=DIFFICULTY_LABELS, rewards=DIFFICULTY_REWARDS, weekday_labels=WEEKDAY_LABELS,
+    )
 
 
 @app.post("/tarefas/<int:task_id>/concluir")
@@ -464,6 +500,28 @@ def complete_recurring(rec_id):
 
     flash(f"+{reward} gold por “{rec.title}”", "gold")
     return redirect(url_for("tasks"))
+
+
+@app.route("/recorrentes/<int:rec_id>/editar", methods=["GET", "POST"])
+def edit_recurring(rec_id):
+    rec = get_owned(RecurringTask, rec_id)
+
+    if request.method == "POST":
+        data, error = parse_task_form(request.form, "recurring")
+        if error:
+            flash(error, "error")
+            return redirect(url_for("edit_recurring", rec_id=rec.id))
+        # Conclusões antigas guardam o gold que pagaram; a mudança vale daqui em diante
+        for field, value in data.items():
+            setattr(rec, field, value)
+        db.session.commit()
+        flash("Tarefa recorrente atualizada.", "ok")
+        return redirect(url_for("tasks"))
+
+    return render_template(
+        "edit_task.html", item=rec, mode="recurring",
+        labels=DIFFICULTY_LABELS, rewards=DIFFICULTY_REWARDS, weekday_labels=WEEKDAY_LABELS,
+    )
 
 
 @app.post("/recorrentes/<int:rec_id>/excluir")

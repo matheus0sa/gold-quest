@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_task_fields.html" import task_fields %}
+{% block title %}Editar tarefa · Gold Quest{% endblock %}
+{% block content %}
+<h1>Editar tarefa</h1>
+
+{% if mode == 'recurring' %}
+  {% set action = url_for('edit_recurring', rec_id=item.id) %}
+{% else %}
+  {% set action = url_for('edit_task', task_id=item.id) %}
+{% endif %}
+
+<form class="panel task-form" method="post" action="{{ action }}">
+  {{ task_fields(mode, labels, rewards, weekday_labels, item) }}
+  <p class="hint" id="form-hint">
+    {% if mode == 'recurring' %}Mudanças valem daqui em diante; o gold já ganho não muda.
+    {% else %}No prazo: +20% de gold. Atrasada: metade.{% endif %}
+  </p>
+  <div class="form-row">
+    <a class="btn" href="{{ url_for('tasks') }}">Cancelar</a>
+    <button class="btn btn-primary" type="submit">Salvar</button>
+  </div>
+</form>
+
+<script src="{{ url_for('static', filename='task_form.js') }}"></script>
+{% endblock %}
