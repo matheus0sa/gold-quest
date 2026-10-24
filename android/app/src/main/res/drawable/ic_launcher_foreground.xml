@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mesma moeda com check do favicon.svg do app web (viewBox 64 escalado para caber na área segura). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.9375"
+        android:scaleY="0.9375"
+        android:translateX="24"
+        android:translateY="24">
+        <path
+            android:pathData="M32,2a30,30 0,1 0,0 60a30,30 0,1 0,0 -60z"
+            android:strokeWidth="3"
+            android:strokeColor="#8A5D00">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="radial"
+                    android:centerX="24.8"
+                    android:centerY="21.2"
+                    android:gradientRadius="45">
+                    <item android:color="#FFE69A" android:offset="0" />
+                    <item android:color="#E8A817" android:offset="0.55" />
+                    <item android:color="#B57F06" android:offset="1" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path
+            android:pathData="M32,10a22,22 0,1 0,0 44a22,22 0,1 0,0 -44z"
+            android:strokeWidth="2"
+            android:strokeColor="#C48A0A" />
+        <path
+            android:pathData="M20,33L28.5,41.5L44.5,24"
+            android:strokeWidth="6.5"
+            android:strokeColor="#1F2A44"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>
