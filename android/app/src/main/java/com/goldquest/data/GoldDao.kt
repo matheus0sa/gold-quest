@@ -94,6 +94,13 @@ interface GoldDao {
     @Insert
     suspend fun insert(item: ShopItem): Long
 
+    @Query("UPDATE shop_item SET weekdays = :weekdays WHERE id = :id")
+    suspend fun setShopItemWeekdays(id: Long, weekdays: String)
+
+    /** Itens ainda não usados seguem os dias novos; os usados guardam o que valia. */
+    @Query("UPDATE inventory_item SET weekdays = :weekdays WHERE shopItemId = :id AND usedAt IS NULL")
+    suspend fun setUnusedInventoryWeekdays(id: Long, weekdays: String)
+
     @Query("DELETE FROM shop_item WHERE id = :id")
     suspend fun deleteShopItem(id: Long)
 
@@ -116,16 +123,22 @@ interface GoldDao {
     @Insert
     suspend fun insert(transaction: WalletTransaction)
 
-    @Query("SELECT COALESCE(SUM(amount), 0) FROM wallet_transaction")
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM wallet_transaction WHERE gem IS NULL")
     fun gold(): Flow<Int>
 
-    @Query("SELECT COALESCE(SUM(amount), 0) FROM wallet_transaction")
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM wallet_transaction WHERE gem IS NULL")
     suspend fun goldOnce(): Int
 
-    @Query("SELECT COALESCE(SUM(amount), 0) FROM wallet_transaction WHERE amount > 0")
+    @Query("SELECT gem, SUM(amount) AS amount FROM wallet_transaction WHERE gem IS NOT NULL GROUP BY gem")
+    fun gems(): Flow<List<GemBalance>>
+
+    @Query("SELECT gem, SUM(amount) AS amount FROM wallet_transaction WHERE gem IS NOT NULL GROUP BY gem")
+    suspend fun gemsOnce(): List<GemBalance>
+
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM wallet_transaction WHERE gem IS NULL AND amount > 0")
     fun totalEarned(): Flow<Int>
 
-    @Query("SELECT COALESCE(-SUM(amount), 0) FROM wallet_transaction WHERE amount < 0")
+    @Query("SELECT COALESCE(-SUM(amount), 0) FROM wallet_transaction WHERE gem IS NULL AND amount < 0")
     fun totalSpent(): Flow<Int>
 
     @Query("SELECT * FROM wallet_transaction ORDER BY createdAt DESC, id DESC LIMIT 100")

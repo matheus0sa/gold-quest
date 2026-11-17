@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.goldquest.GoldQuestApp
+import com.goldquest.data.GemBag
 import com.goldquest.data.InventoryItem
 import com.goldquest.data.RecurringCompletion
 import com.goldquest.data.RecurringTask
@@ -16,12 +17,15 @@ import com.goldquest.domain.MsgKind
 import com.goldquest.domain.PriceInfo
 import com.goldquest.domain.ReviewItem
 import com.goldquest.domain.TaskDraft
+import com.goldquest.domain.availableOn
 import com.goldquest.domain.WEEKDAY_LABELS
 import com.goldquest.domain.currentPrice
 import com.goldquest.domain.isMonthly
 import com.goldquest.domain.isScheduled
 import com.goldquest.domain.monthBounds
 import com.goldquest.domain.reward
+import com.goldquest.domain.toBag
+import com.goldquest.domain.usableOn
 import com.goldquest.domain.weekdayIndex
 import com.goldquest.domain.weekdayList
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -74,9 +78,30 @@ data class WeekUi(
     val maxCount: Int get() = days.maxOfOrNull { it.count } ?: 0
 }
 
-data class Offer(val item: ShopItem, val info: PriceInfo)
+/** availableToday = false quando o item tem dias e hoje não é um deles. */
+data class Offer(val item: ShopItem, val info: PriceInfo, val availableToday: Boolean)
 
-data class InventoryUi(val available: List<InventoryItem>, val used: List<InventoryItem>)
+/** Itens iguais guardados juntos, para a tabela da semana. */
+data class InventoryStack(val emoji: String, val name: String, val count: Int)
+
+/** Uma linha da tabela: o que está guardado para aquele dia da semana. */
+data class InventoryDay(val index: Int, val label: String, val stacks: List<InventoryStack>)
+
+data class InventoryUi(
+    val todayIndex: Int = 0,
+    val forToday: List<InventoryItem> = emptyList(),   // pode usar hoje
+    val otherDays: List<InventoryItem> = emptyList(),  // guardado para outro dia
+    val week: List<InventoryDay> = emptyList(),
+    val anyDay: List<InventoryStack> = emptyList(),    // sem restrição de dia
+    val used: List<InventoryItem> = emptyList(),
+) {
+    val isEmpty: Boolean get() = forToday.isEmpty() && otherDays.isEmpty()
+}
+
+private fun List<InventoryItem>.stacked(): List<InventoryStack> =
+    groupBy { it.emoji to it.name }
+        .map { (key, items) -> InventoryStack(key.first, key.second, items.size) }
+        .sortedBy { it.name.lowercase() }
 
 data class HistoryUi(val transactions: List<WalletTransaction>, val earned: Int, val spent: Int)
 
@@ -98,6 +123,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val ready: StateFlow<Boolean> = _ready
 
     val gold: StateFlow<Int> = repo.gold.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+    val gems: StateFlow<GemBag> = repo.gems.map { it.toBag() }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
     val tags: StateFlow<List<Tag>> = repo.tags.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val currentFilter: StateFlow<TagFilter> = combine(tagFilter, repo.tags) { filter, tags ->
         // tag removida: volta para "Todas"
@@ -170,15 +196,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val offers: StateFlow<List<Offer>> = combine(repo.shopItems, repo.inventory, today) { items, inventory, today ->
         val byItem = inventory.groupBy { it.shopItemId }
-        items.map { Offer(it, currentPrice(it, byItem[it.id].orEmpty(), today)) }
+        items.map { Offer(it, currentPrice(it, byItem[it.id].orEmpty(), today), it.availableOn(today)) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val inventoryUi: StateFlow<InventoryUi> = repo.inventory.map { all ->
+    val inventoryUi: StateFlow<InventoryUi> = combine(repo.inventory, today) { all, today ->
+        val available = all.filter { it.usedAt == null }.sortedBy { it.purchasedAt }
+        val (forToday, otherDays) = available.partition { it.usableOn(today) }
+        val restricted = available.filter { it.weekdayList().isNotEmpty() }
         InventoryUi(
-            available = all.filter { it.usedAt == null }.sortedBy { it.purchasedAt },
+            todayIndex = today.weekdayIndex,
+            forToday = forToday,
+            otherDays = otherDays,
+            week = WEEKDAY_LABELS.mapIndexed { i, label ->
+                InventoryDay(i, label, restricted.filter { i in it.weekdayList() }.stacked())
+            },
+            anyDay = available.filter { it.weekdayList().isEmpty() }.stacked(),
             used = all.filter { it.usedAt != null }.sortedByDescending { it.usedAt }.take(10),
         )
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, InventoryUi(emptyList(), emptyList()))
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, InventoryUi())
 
     val historyUi: StateFlow<HistoryUi> = combine(repo.transactions, repo.totalEarned, repo.totalSpent) { t, e, s ->
         HistoryUi(t, e, s)
@@ -228,10 +263,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun addTag(name: String): Msg = repo.addTag(name)
     fun deleteTag(id: Long) = run { repo.deleteTag(id); null }
 
-    fun addShopItem(name: String, emoji: String, price: Int?) = run { repo.addShopItem(name, emoji, price) }
+    fun addShopItem(name: String, emoji: String, price: Int?, weekdays: Set<Int>, gems: GemBag) =
+        run { repo.addShopItem(name, emoji, price, weekdays, gems) }
+    fun setShopItemWeekdays(id: Long, weekdays: Set<Int>) = run { repo.setShopItemWeekdays(id, weekdays) }
     fun buyItem(id: Long) = run { repo.buyItem(id, today.value) }
     fun deleteShopItem(id: Long) = run { repo.deleteShopItem(id) }
-    fun useItem(id: Long) = run { repo.useItem(id) }
+    fun useItem(id: Long) = run { repo.useItem(id, today.value) }
 
     fun submitReview(answers: Map<String, Boolean>) = run {
         val msg = repo.applyReview(answers, today.value)

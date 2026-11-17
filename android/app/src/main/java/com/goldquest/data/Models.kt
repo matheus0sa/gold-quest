@@ -39,6 +39,8 @@ data class Task(
     val penalize: Boolean = false,
     val penalizedAt: LocalDate? = null,  // quando a penalidade foi cobrada
     val tagId: Long? = null,
+    val gem: Gem? = null,  // joia que a tarefa dá ao ser concluída
+    val gemAmount: Int = 0,
 )
 
 /**
@@ -60,6 +62,8 @@ data class RecurringTask(
     val penalize: Boolean = false,
     val tagId: Long? = null,
     val createdAt: LocalDateTime = LocalDateTime.now(),
+    val gem: Gem? = null,  // ex.: Treino dá 1 Esmeralda
+    val gemAmount: Int = 0,
 )
 
 /** Cada vez que um hábito foi feito (uma linha por dia). */
@@ -73,15 +77,21 @@ data class RecurringCompletion(
     val recurringId: Long,
     val date: LocalDate,
     val reward: Int,
+    val gem: Gem? = null,  // joia paga nesta conclusão
+    val gemAmount: Int = 0,
 )
 
 @Entity(tableName = "shop_item")
 data class ShopItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val price: Int,  // preço base
+    val price: Int,  // preço base em gold (0 = só joias)
     val emoji: String = "🎁",
     val createdAt: LocalDateTime = LocalDateTime.now(),
+    /** Dias em que pode ser usado, ex.: "0,4" (0 = segunda); vazio = qualquer dia. */
+    val weekdays: String = "",
+    /** Joias exigidas além do gold; não entram no preço dinâmico. */
+    val gems: GemBag = emptyMap(),
 )
 
 @Entity(
@@ -97,16 +107,26 @@ data class InventoryItem(
     val emoji: String,
     val purchasedAt: LocalDateTime = LocalDateTime.now(),
     val usedAt: LocalDateTime? = null,
+    /** Copiado do item da loja na compra (e quando os dias do item mudam). */
+    val weekdays: String = "",
+    val gemsPaid: GemBag = emptyMap(),
 )
 
-/** Histórico de tudo que entra (+) e sai (-) da carteira. O saldo é a soma desta tabela. */
-@Entity(tableName = "wallet_transaction")
+/**
+ * Histórico de tudo que entra (+) e sai (-) da carteira.
+ * gem = null é gold; senão a linha move aquela joia. Cada saldo é a soma das suas linhas.
+ */
+@Entity(tableName = "wallet_transaction", indices = [Index("gem")])
 data class WalletTransaction(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val amount: Int,
     val description: String,
     val createdAt: LocalDateTime = LocalDateTime.now(),
+    val gem: Gem? = null,
 )
+
+/** Saldo de uma joia (resultado de consulta). */
+data class GemBalance(val gem: Gem, val amount: Int)
 
 /** Linha única (id = 1) com o último dia já revisado; null = nunca revisou. */
 @Entity(tableName = "settings")

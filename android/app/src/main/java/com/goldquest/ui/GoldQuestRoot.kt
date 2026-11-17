@@ -1,12 +1,15 @@
 package com.goldquest.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
@@ -39,6 +42,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.goldquest.data.Gem
+import com.goldquest.data.GemBag
 import com.goldquest.domain.MsgKind
 
 private data class Tab(val route: String, val label: String, val icon: String)
@@ -61,6 +66,7 @@ fun GoldQuestRoot(vm: MainViewModel = viewModel()) {
     val ready by vm.ready.collectAsStateWithLifecycle()
     val review by vm.review.collectAsStateWithLifecycle()
     val gold by vm.gold.collectAsStateWithLifecycle()
+    val gems by vm.gems.collectAsStateWithLifecycle()
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
 
     // O dia pode ter virado enquanto o app estava em segundo plano
@@ -77,7 +83,7 @@ fun GoldQuestRoot(vm: MainViewModel = viewModel()) {
     }
 
     Scaffold(
-        topBar = { TopBar(gold) { showReminder = true } },
+        topBar = { TopBar(gold, gems) { showReminder = true } },
         bottomBar = {
             if (ready && review.isEmpty() && TABS.any { it.route == route }) {
                 NavigationBar {
@@ -144,7 +150,8 @@ private fun AppNavHost(nav: androidx.navigation.NavHostController, vm: MainViewM
         }
         composable("shop") {
             val offers by vm.offers.collectAsStateWithLifecycle()
-            ShopScreen(offers, gold, vm)
+            val gems by vm.gems.collectAsStateWithLifecycle()
+            ShopScreen(offers, gold, gems, vm)
         }
         composable("inventory") {
             val ui by vm.inventoryUi.collectAsStateWithLifecycle()
@@ -164,36 +171,51 @@ private fun AppNavHost(nav: androidx.navigation.NavHostController, vm: MainViewM
 }
 
 @Composable
-private fun TopBar(gold: Int, onReminder: () -> Unit) {
+private fun TopBar(gold: Int, gems: GemBag, onReminder: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.background) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-        ) {
-            Text("Gold Quest", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(onClick = onReminder) { Text("🔔", fontSize = 20.sp) }
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        Column(Modifier.statusBarsPadding()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Text("Gold Quest", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = onReminder) { Text("🔔", fontSize = 20.sp) }
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.primaryContainer,
                     ) {
-                        Coin(20.dp)
-                        Text(
-                            gold.toString(),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = if (gold < 0) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Coin(20.dp)
+                            Text(
+                                gold.toString(),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                color = if (gold < 0) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                    }
+                }
+            }
+            // Joias que você tem (só aparecem as com saldo)
+            if (gems.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                ) {
+                    for (gem in Gem.entries) {
+                        gems[gem]?.let { GemBalancePill(gem, it) }
                     }
                 }
             }

@@ -20,4 +20,10 @@ class Converters {
     @TypeConverter
     fun toDateTime(value: Long?): LocalDateTime? =
         value?.let { LocalDateTime.ofInstant(Instant.ofEpochMilli(it), ZoneId.systemDefault()) }
+
+    @TypeConverter
+    fun fromGems(value: GemBag): String = encodeGems(value)
+
+    @TypeConverter
+    fun toGems(value: String): GemBag = decodeGems(value)
 }

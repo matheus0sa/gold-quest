@@ -4,6 +4,8 @@ import androidx.room.withTransaction
 import com.goldquest.data.AppDatabase
 import com.goldquest.data.Difficulty
 import com.goldquest.data.Frequency
+import com.goldquest.data.Gem
+import com.goldquest.data.GemBag
 import com.goldquest.data.InventoryItem
 import com.goldquest.data.RecurringCompletion
 import com.goldquest.data.RecurringTask
@@ -41,10 +43,19 @@ data class TaskDraft(
     val repeat: Repeat = Repeat.NONE,
     val weekdays: Set<Int> = emptySet(),
     val dueDate: LocalDate? = null,
+    val gem: Gem? = null,  // joia que a tarefa dá (null = só gold)
+    val gemAmount: Int = 1,
 ) {
+    /** Quantidade salva no banco: 0 quando a tarefa não dá joia. */
+    val savedGemAmount: Int get() = if (gem == null) 0 else gemAmount
+
+
     /** Mensagem de erro, ou null se o formulário está válido. */
     fun validate(kind: DraftKind): String? {
         if (title.isBlank()) return "Escreva um título para a tarefa."
+        if (gem != null && gemAmount !in 1..MAX_GEMS_PER_TASK) {
+            return "A tarefa pode dar de 1 a $MAX_GEMS_PER_TASK joias."
+        }
         val recurring = if (kind == DraftKind.NEW) repeat != Repeat.NONE else kind == DraftKind.RECURRING
         if (recurring) {
             if (repeat == Repeat.NONE || (repeat == Repeat.WEEKLY && weekdays.isEmpty())) {
@@ -72,6 +83,7 @@ class GoldRepository(private val db: AppDatabase) {
 
     val tags = dao.tags()
     val gold = dao.gold()
+    val gems = dao.gems()
     val pendingTasks = dao.pendingTasks()
     val doneTasks = dao.doneTasks()
     val recurring = dao.recurring()
@@ -90,7 +102,8 @@ class GoldRepository(private val db: AppDatabase) {
     suspend fun seedIfNeeded(today: LocalDate) = db.withTransaction {
         if (dao.settings() != null) return@withTransaction
         dao.save(Settings(lastReviewDate = today.minusDays(1)))
-        dao.insert(ShopItem(name = "1 hora de videogame", price = 100, emoji = "🎮"))
+        // O videogame pede uma Esmeralda: crie uma atividade (ex.: Treino) que dê Esmeralda
+        dao.insert(ShopItem(name = "1 hora de videogame", price = 100, emoji = "🎮", gems = mapOf(Gem.ESMERALDA to 1)))
         dao.insert(ShopItem(name = "Episódio de série", price = 50, emoji = "📺"))
         dao.insert(ShopItem(name = "Pedir delivery", price = 300, emoji = "🍕"))
         DEFAULT_TAGS.forEach { dao.insert(Tag(name = it)) }
@@ -98,6 +111,18 @@ class GoldRepository(private val db: AppDatabase) {
 
     private suspend fun addGold(amount: Int, description: String) {
         dao.insert(WalletTransaction(amount = amount, description = description))
+    }
+
+    private suspend fun addGem(gem: Gem, amount: Int, description: String) {
+        dao.insert(WalletTransaction(amount = amount, description = description, gem = gem))
+    }
+
+    /** Paga gold e, se houver, a joia da tarefa. Devolve o ganho em texto: "+36 gold e +1 Esmeralda". */
+    private suspend fun payReward(gold: Int, gem: GemReward?, description: String): String {
+        addGold(gold, description)
+        if (gem == null) return "+$gold gold"
+        addGem(gem.gem, gem.amount, description)
+        return "+$gold gold e +$gem"
     }
 
     // ---------- Tarefas ----------
@@ -110,6 +135,7 @@ class GoldRepository(private val db: AppDatabase) {
                 Task(
                     title = title, difficulty = draft.difficulty, penalize = draft.penalize,
                     tagId = draft.tagId, dueDate = draft.dueDate,
+                    gem = draft.gem, gemAmount = draft.savedGemAmount,
                 )
             )
             return ok("Tarefa adicionada.")
@@ -123,7 +149,7 @@ class GoldRepository(private val db: AppDatabase) {
             id = id, title = title, difficulty = difficulty, penalize = penalize, tagId = tagId,
             frequency = if (repeat == Repeat.MONTHLY) Frequency.MONTHLY else Frequency.WEEKLY,
             weekdays = if (repeat == Repeat.MONTHLY) "" else weekdays.sorted().joinToString(","),
-            createdAt = createdAt,
+            createdAt = createdAt, gem = gem, gemAmount = savedGemAmount,
         )
 
     suspend fun updateTask(id: Long, draft: TaskDraft, today: LocalDate): Msg {
@@ -138,6 +164,7 @@ class GoldRepository(private val db: AppDatabase) {
             task.copy(
                 title = draft.title.trim().take(120), difficulty = draft.difficulty,
                 penalize = draft.penalize, tagId = draft.tagId, dueDate = newDue,
+                gem = draft.gem, gemAmount = draft.savedGemAmount,
                 // prazo novo, penalidade volta a valer
                 penalizedAt = if (newDue != task.dueDate) null else task.penalizedAt,
             )
@@ -150,8 +177,8 @@ class GoldRepository(private val db: AppDatabase) {
         if (task.done) return@withTransaction null
         val reward = task.calculateReward(today)
         dao.update(task.copy(done = true, completedAt = LocalDateTime.now(), rewardEarned = reward))
-        addGold(reward, "Tarefa concluída: ${task.title}")
-        gold("+$reward gold por concluir “${task.title}”")
+        val earned = payReward(reward, task.gemReward(), "Tarefa concluída: ${task.title}")
+        gold("$earned por concluir “${task.title}”")
     }
 
     suspend fun deleteTask(id: Long): Msg {
@@ -172,9 +199,14 @@ class GoldRepository(private val db: AppDatabase) {
             return@withTransaction null
         }
         val reward = rec.reward()
-        dao.insert(RecurringCompletion(recurringId = id, date = today, reward = reward))
-        addGold(reward, "Recorrente concluída: ${rec.title}")
-        gold("+$reward gold por “${rec.title}”")
+        val gem = rec.gemReward()
+        dao.insert(
+            RecurringCompletion(
+                recurringId = id, date = today, reward = reward, gem = gem?.gem, gemAmount = gem?.amount ?: 0,
+            )
+        )
+        val earned = payReward(reward, gem, "Recorrente concluída: ${rec.title}")
+        gold("$earned por “${rec.title}”")
     }
 
     suspend fun updateRecurring(id: Long, draft: TaskDraft): Msg {
@@ -207,24 +239,58 @@ class GoldRepository(private val db: AppDatabase) {
 
     // ---------- Loja ----------
 
-    suspend fun addShopItem(rawName: String, rawEmoji: String, price: Int?): Msg {
+    /** weekdays vazio = pode usar em qualquer dia. price 0 = paga só com joias. */
+    suspend fun addShopItem(
+        rawName: String,
+        rawEmoji: String,
+        price: Int?,
+        weekdays: Set<Int> = emptySet(),
+        gems: GemBag = emptyMap(),
+    ): Msg {
         val name = rawName.trim()
-        if (name.isEmpty() || price == null || price <= 0) {
-            return error("Dê um nome e um preço maior que zero para a recompensa.")
+        val cleanGems = gems.filterValues { it > 0 }.mapValues { (_, n) -> minOf(n, MAX_GEMS_PER_ITEM) }
+        val gold = price ?: 0
+        if (name.isEmpty()) return error("Dê um nome para a recompensa.")
+        if (gold < 0 || (gold == 0 && cleanGems.isEmpty())) {
+            return error("A recompensa precisa custar gold, joias ou os dois.")
         }
         val emoji = rawEmoji.trim().ifEmpty { "🎁" }.take(8)
-        dao.insert(ShopItem(name = name.take(80), price = price, emoji = emoji))
+        dao.insert(
+            ShopItem(
+                name = name.take(80), price = gold, emoji = emoji, weekdays = formatWeekdays(weekdays), gems = cleanGems,
+            )
+        )
         return ok("$name agora está na loja.")
+    }
+
+    /** Muda os dias do item e dos que ainda estão guardados no inventário. */
+    suspend fun setShopItemWeekdays(id: Long, weekdays: Set<Int>): Msg = db.withTransaction {
+        val item = dao.shopItem(id) ?: return@withTransaction error("Item não encontrado.")
+        val raw = formatWeekdays(weekdays)
+        dao.setShopItemWeekdays(id, raw)
+        dao.setUnusedInventoryWeekdays(id, raw)
+        ok("${item.name}: ${weekdaysLabel(parseWeekdays(raw), "qualquer dia").lowercase()}.")
     }
 
     suspend fun buyItem(id: Long, today: LocalDate): Msg = db.withTransaction {
         val item = dao.shopItem(id) ?: return@withTransaction error("Item não encontrado.")
+        if (!item.availableOn(today)) {
+            return@withTransaction error("${item.name} só pode ser comprado em: ${item.daysLabel().lowercase()}.")
+        }
         val price = currentPrice(item, dao.purchasesOf(id), today).price  // sempre recalcula na hora
-        val balance = dao.goldOnce()
-        if (balance < price) return@withTransaction error("Faltam ${price - balance} gold para comprar ${item.name}.")
-        addGold(-price, "Compra: ${item.name}")
-        dao.insert(InventoryItem(shopItemId = id, pricePaid = price, name = item.name, emoji = item.emoji))
-        ok("${item.name} foi para o seu inventário por $price gold.")
+        val missing = shortfall(price, item.gems, dao.goldOnce(), dao.gemsOnce().toBag())
+        if (!missing.isEmpty) return@withTransaction error("Faltam ${missing.describe()} para comprar ${item.name}.")
+        val description = "Compra: ${item.name}"
+        if (price > 0) addGold(-price, description)
+        item.gems.forEach { (gem, amount) -> addGem(gem, -amount, description) }
+        dao.insert(
+            InventoryItem(
+                shopItemId = id, pricePaid = price, name = item.name, emoji = item.emoji,
+                weekdays = item.weekdays, gemsPaid = item.gems,
+            )
+        )
+        val cost = listOfNotNull(price.takeIf { it > 0 }?.let { "$it gold" }, item.gems.describe().ifEmpty { null })
+        ok("${item.name} foi para o seu inventário por ${cost.joinToString(" + ")}.")
     }
 
     /** Mantém o inventário: a chave estrangeira só desfaz a ligação com o item removido. */
@@ -233,9 +299,10 @@ class GoldRepository(private val db: AppDatabase) {
         return ok("Recompensa removida da loja.")
     }
 
-    suspend fun useItem(id: Long): Msg? {
+    suspend fun useItem(id: Long, today: LocalDate): Msg? {
         val inv = dao.inventoryItem(id) ?: return null
         if (inv.usedAt != null) return null
+        if (!inv.usableOn(today)) return error("${inv.name} é só para ${inv.daysLabel().lowercase()}.")
         dao.update(inv.copy(usedAt = LocalDateTime.now()))
         return ok("Aproveite: ${inv.name}!")
     }
@@ -289,19 +356,26 @@ class GoldRepository(private val db: AppDatabase) {
     /** answers: key -> true ("fiz") ou false ("não fiz"). Sem resposta conta como "não fiz". */
     suspend fun applyReview(answers: Map<String, Boolean>, today: LocalDate): Msg = db.withTransaction {
         var earned = 0
+        val gemsEarned = mutableMapOf<Gem, Int>()
         var lost = 0
         for (item in pendingItems(today)) {
             val label = if (item.monthly) MONTH_LABELS[item.day.monthValue - 1] else formatDay(item.day)
             if (answers[item.key] == true) {
                 if (item.recurring) {
-                    dao.insert(RecurringCompletion(recurringId = item.taskId, date = item.day, reward = item.reward))
-                    addGold(item.reward, "Recorrente concluída ($label): ${item.title}")
+                    dao.insert(
+                        RecurringCompletion(
+                            recurringId = item.taskId, date = item.day, reward = item.reward,
+                            gem = item.gem?.gem, gemAmount = item.gem?.amount ?: 0,
+                        )
+                    )
+                    payReward(item.reward, item.gem, "Recorrente concluída ($label): ${item.title}")
                 } else {
                     val task = dao.task(item.taskId) ?: continue
                     dao.update(task.copy(done = true, completedAt = LocalDateTime.now(), rewardEarned = item.reward))
-                    addGold(item.reward, "Tarefa concluída: ${item.title}")
+                    payReward(item.reward, item.gem, "Tarefa concluída: ${item.title}")
                 }
                 earned += item.reward
+                item.gem?.let { gemsEarned.merge(it.gem, it.amount, Int::plus) }
             } else if (item.penalty > 0) {
                 addGold(-item.penalty, "Penalidade ($label): ${item.title}")
                 if (!item.recurring) {
@@ -313,6 +387,7 @@ class GoldRepository(private val db: AppDatabase) {
         markReviewed(today)
         val parts = buildList {
             if (earned > 0) add("+$earned gold recuperado")
+            if (gemsEarned.isNotEmpty()) add("+${gemsEarned.describe()}")
             if (lost > 0) add("−$lost gold de penalidade")
         }
         val text = "Revisão concluída" + if (parts.isEmpty()) "." else ": ${parts.joinToString(", ")}."

@@ -32,6 +32,7 @@ fun EditTaskScreen(id: Long, tags: List<Tag>, vm: MainViewModel, onBack: () -> U
             initial = TaskDraft(
                 title = task.title, difficulty = task.difficulty, penalize = task.penalize,
                 tagId = task.tagId, dueDate = task.dueDate,
+                gem = task.gem, gemAmount = task.gemAmount.coerceAtLeast(1),
             )
         }
     }
@@ -54,6 +55,7 @@ fun EditRecurringScreen(id: Long, tags: List<Tag>, vm: MainViewModel, onBack: ()
                 title = rec.title, difficulty = rec.difficulty, penalize = rec.penalize, tagId = rec.tagId,
                 repeat = if (rec.isMonthly) Repeat.MONTHLY else Repeat.WEEKLY,
                 weekdays = if (rec.isMonthly) emptySet() else rec.weekdayList().toSet(),
+                gem = rec.gem, gemAmount = rec.gemAmount.coerceAtLeast(1),
             )
         }
     }

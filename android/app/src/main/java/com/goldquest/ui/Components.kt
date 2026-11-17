@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.goldquest.data.Difficulty
 import com.goldquest.data.Tag
+import com.goldquest.domain.GemReward
+import com.goldquest.domain.WEEKDAY_LABELS
 import com.goldquest.ui.theme.Gold
 import com.goldquest.ui.theme.GoldDeep
 
@@ -139,6 +141,7 @@ fun TaskCard(
     modifier: Modifier = Modifier,
     leading: @Composable (() -> Unit)? = null,
     trailingText: String? = null,
+    gem: GemReward? = null,  // joia ganha, mostrada abaixo do gold
     muted: Boolean = false,
     actions: @Composable (RowScope.() -> Unit)? = null,
     meta: @Composable () -> Unit = {},
@@ -167,12 +170,17 @@ fun TaskCard(
                     itemVerticalAlignment = Alignment.CenterVertically,
                 ) { meta() }
             }
-            if (trailingText != null) {
-                Text(
-                    trailingText,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
+            if (trailingText != null || gem != null) {
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (trailingText != null) {
+                        Text(
+                            trailingText,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
+                    gem?.let { GemRewardBadge(it) }
+                }
             }
             actions?.invoke(this)
         }
@@ -212,4 +220,19 @@ fun ConfirmDialog(text: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
         confirmButton = { TextButton(onClick = { onConfirm(); onDismiss() }) { Text("Excluir") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
+}
+
+/** Chips de Seg a Dom; nenhum marcado = qualquer dia. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun WeekdayPicker(selected: Set<Int>, onChange: (Set<Int>) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        WEEKDAY_LABELS.forEachIndexed { i, label ->
+            FilterChip(
+                selected = i in selected,
+                onClick = { onChange(if (i in selected) selected - i else selected + i) },
+                label = { Text(label) },
+            )
+        }
+    }
 }

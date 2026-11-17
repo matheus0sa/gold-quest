@@ -35,8 +35,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import com.goldquest.data.Difficulty
+import com.goldquest.data.Gem
 import com.goldquest.data.Tag
 import com.goldquest.domain.DraftKind
+import com.goldquest.domain.MAX_GEMS_PER_TASK
 import com.goldquest.domain.MsgKind
 import com.goldquest.domain.Repeat
 import com.goldquest.domain.TaskDraft
@@ -94,6 +96,36 @@ fun TaskForm(
                 FilterChip(draft.tagId == tag.id, { draft = draft.copy(tagId = tag.id) }, { Text(tag.name) })
             }
             TextButton(onClick = { showTags = true }) { Text("Gerenciar") }
+        }
+
+        FieldLabel("Joia (opcional)")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            FilterChip(draft.gem == null, { draft = draft.copy(gem = null) }, { Text("Nenhuma") })
+            for (gem in Gem.entries) {
+                FilterChip(
+                    selected = draft.gem == gem,
+                    onClick = { draft = draft.copy(gem = gem) },
+                    label = { Text(gem.label) },
+                    leadingIcon = { GemIcon(gem, 18.dp) },
+                )
+            }
+        }
+        draft.gem?.let { gem ->
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Quantidade", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                for (n in 1..MAX_GEMS_PER_TASK) {
+                    FilterChip(draft.gemAmount == n, { draft = draft.copy(gemAmount = n) }, { Text("$n") })
+                }
+            }
+            Text(
+                "Recompensas que pedem ${gem.label} só podem ser compradas fazendo atividades que dão ${gem.label}. " +
+                    "Gold de outras tarefas não substitui a joia.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         if (kind != DraftKind.TASK) {

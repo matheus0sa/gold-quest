@@ -14,7 +14,7 @@ import java.time.LocalDate
  *  - recorrentes programadas para aquele dia e não marcadas;
  *  - mensais não feitas num mês que terminou (no mês de criação, sem penalidade);
  *  - tarefas únicas cujo prazo caiu naquele dia e continuam pendentes.
- * "Fiz" paga o gold normal (no prazo). "Não fiz" cobra a penalidade, se a tarefa tiver.
+ * "Fiz" paga o gold normal (no prazo) e a joia da tarefa. "Não fiz" cobra a penalidade, se a tarefa tiver.
  */
 
 enum class ReviewKind { TASK, WEEKLY, MONTHLY }
@@ -29,6 +29,7 @@ data class ReviewItem(
     val detail: String,  // "Prazo 12/03", "🔁 Seg, Qua", "📅 Mensal de março"
     val reward: Int,     // gold se "fiz"
     val penalty: Int,    // gold perdido se "não fiz" (0 = sem penalidade)
+    val gem: GemReward? = null,  // joia se "fiz"; "não fiz" não tira joias
 ) {
     val recurring: Boolean get() = kind != ReviewKind.TASK
     val monthly: Boolean get() = kind == ReviewKind.MONTHLY
@@ -77,6 +78,7 @@ fun buildReviewItems(
                     detail = "🔁 ${rec.daysLabel()}",
                     reward = rec.reward(),
                     penalty = if (rec.penalize) rec.penalty() else 0,
+                    gem = rec.gemReward(),
                 )
             }
         }
@@ -96,6 +98,7 @@ fun buildReviewItems(
                         detail = "📅 Mensal de ${MONTH_LABELS[day.monthValue - 1]}",
                         reward = rec.reward(),
                         penalty = if (rec.penalize && created < first) rec.penalty() else 0,
+                        gem = rec.gemReward(),
                     )
                 }
             }
@@ -115,6 +118,7 @@ fun buildReviewItems(
             detail = "Prazo ${formatDay(due)}",
             reward = task.calculateReward(due),
             penalty = if (task.penalize) task.penalty() else 0,
+            gem = task.gemReward(),
         )
     }
 

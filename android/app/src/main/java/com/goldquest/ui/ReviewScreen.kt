@@ -18,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,7 +42,7 @@ fun ReviewScreen(items: List<ReviewItem>, yesterday: LocalDate, onSubmit: (Map<S
         item {
             Text(
                 "Antes de começar o dia: estas tarefas ficaram sem marcar. Se você fez e esqueceu, " +
-                    "ainda dá para ganhar o gold. As que têm ⚠ custam gold se não foram feitas.",
+                    "ainda dá para ganhar o gold e as joias. As que têm ⚠ custam gold se não foram feitas.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -86,7 +87,12 @@ private fun ReviewCard(item: ReviewItem, answer: Boolean?, onAnswer: (Boolean) -
                 FilterChip(
                     selected = answer == true,
                     onClick = { onAnswer(true) },
-                    label = { Text("Fiz · +${item.reward} gold") },
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Fiz · +${item.reward} gold")
+                            item.gem?.let { GemRewardBadge(it) }
+                        }
+                    },
                 )
                 FilterChip(
                     selected = answer == false,

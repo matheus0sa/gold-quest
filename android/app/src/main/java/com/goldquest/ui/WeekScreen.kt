@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.goldquest.data.Difficulty
+import com.goldquest.domain.gemReward
 import com.goldquest.domain.reward
 import com.goldquest.domain.weekdayList
 
@@ -65,6 +66,7 @@ fun WeekScreen(ui: WeekUi, vm: MainViewModel) {
                     title = rec.title,
                     leading = { Text("📅") },
                     trailingText = "+${rec.reward()}",
+                    gem = rec.gemReward(),
                 ) {
                     DifficultyChip(rec.difficulty)
                     MetaText("1x por mês, qualquer dia")
@@ -156,7 +158,10 @@ private fun WeekTable(ui: WeekUi) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(rec.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2)
-                        MetaText("+${rec.reward()} gold")
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            MetaText("+${rec.reward()} gold")
+                            rec.gemReward()?.let { GemRewardBadge(it, fontSize = 13.sp) }
+                        }
                     }
                     for (d in ui.days) {
                         Box(Modifier.width(cell), contentAlignment = Alignment.Center) {

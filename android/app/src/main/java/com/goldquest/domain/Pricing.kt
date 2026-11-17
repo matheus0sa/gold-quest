@@ -85,6 +85,7 @@ fun calcularPreco(base: Int, compras: List<LocalDate>, criadoEm: LocalDate?, hoj
 
 /** Preço de um item da loja hoje, a partir das compras dele no inventário. */
 fun currentPrice(item: ShopItem, purchases: List<InventoryItem>, today: LocalDate): PriceInfo {
+    if (item.price <= 0) return PriceInfo(0, 0, Trend.BASE, "Só joias")  // nada de gold para variar
     val dates: List<LocalDateTime> = purchases.map { it.purchasedAt }
     val since = today.minusDays(JANELA_DIAS.toLong())
     var compras = dates.filter { it.toLocalDate() >= since }

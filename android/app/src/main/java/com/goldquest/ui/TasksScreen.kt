@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.goldquest.data.RecurringTask
 import com.goldquest.data.Task
 import com.goldquest.domain.DraftKind
@@ -40,6 +41,7 @@ import com.goldquest.domain.daysLabel
 import com.goldquest.domain.dueStatus
 import com.goldquest.domain.formatDateTime
 import com.goldquest.domain.formatDay
+import com.goldquest.domain.gemReward
 import com.goldquest.domain.penalty
 import com.goldquest.domain.reward
 
@@ -134,6 +136,7 @@ fun TasksScreen(
                         DifficultyChip(rec.difficulty)
                         rec.tagId?.let { tagsById[it] }?.let { TagChip(it) }
                         MetaText(rec.daysLabel())
+                        rec.gemReward()?.let { GemRewardBadge(it, fontSize = 13.sp) }
                         if (rec.penalize) PenaltyBadge(rec.penalty())
                     }
                 }
@@ -147,6 +150,7 @@ fun TasksScreen(
                         muted = true,
                         leading = { CheckCircle(true, null, "") },
                         trailingText = "+${task.rewardEarned ?: 0}",
+                        gem = task.gemReward(),
                     ) {
                         task.completedAt?.let { MetaText(formatDateTime(it)) }
                     }
@@ -189,7 +193,7 @@ fun TasksScreen(
                     showForm = false
                 }
                 Text(
-                    "No prazo: +20% de gold. Atrasada: metade.",
+                    "No prazo: +20% de gold. Atrasada: metade. A joia vem inteira sempre.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
                 )
@@ -215,6 +219,7 @@ private fun HabitCard(
         muted = done,
         leading = { CheckCircle(done, { vm.completeRecurring(rec.id) }, "Concluir ${rec.title}") },
         trailingText = (if (done) "✓ " else "") + "+${rec.reward()}",
+        gem = rec.gemReward(),
     ) {
         DifficultyChip(rec.difficulty)
         rec.tagId?.let { tagsById[it] }?.let { TagChip(it) }
@@ -234,6 +239,7 @@ private fun PendingTaskCard(
         title = task.title,
         leading = { CheckCircle(false, onComplete, "Concluir ${task.title}") },
         trailingText = "+${task.calculateReward(ui.today)}",
+        gem = task.gemReward(),
         actions = { RowActions(onEdit, onDelete) },
     ) {
         DifficultyChip(task.difficulty)

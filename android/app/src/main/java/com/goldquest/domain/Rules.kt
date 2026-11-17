@@ -2,7 +2,9 @@ package com.goldquest.domain
 
 import com.goldquest.data.Difficulty
 import com.goldquest.data.Frequency
+import com.goldquest.data.InventoryItem
 import com.goldquest.data.RecurringTask
+import com.goldquest.data.ShopItem
 import com.goldquest.data.Task
 import java.time.LocalDate
 import kotlin.math.max
@@ -48,6 +50,8 @@ fun Task.calculateReward(today: LocalDate): Int {
     else max(1, roundHalfEven(base * LATE_PENALTY))
 }
 
+fun Task.gemReward(): GemReward? = gemRewardOf(gem, gemAmount)
+
 fun Task.dueStatus(today: LocalDate): DueStatus? {
     val due = dueDate ?: return null
     return when {
@@ -61,19 +65,25 @@ fun Task.dueStatus(today: LocalDate): DueStatus? {
 
 val RecurringTask.isMonthly: Boolean get() = frequency == Frequency.MONTHLY
 
-fun RecurringTask.weekdayList(): List<Int> =
-    weekdays.split(",").filter { it.isNotBlank() }.map { it.trim().toInt() }
+/** "0,2,4" -> [0, 2, 4], ordenado e sem repetição. */
+fun parseWeekdays(raw: String): List<Int> =
+    raw.split(",").mapNotNull { it.trim().toIntOrNull() }.filter { it in 0..6 }.distinct().sorted()
 
-fun RecurringTask.daysLabel(): String {
-    if (isMonthly) return "1x por mês"
-    val days = weekdayList()
-    return when {
-        days.size == 7 -> "Todo dia"
-        days == listOf(0, 1, 2, 3, 4) -> "Dias úteis"
-        days == listOf(5, 6) -> "Fim de semana"
-        else -> days.joinToString(", ") { WEEKDAY_LABELS[it] }
-    }
+fun formatWeekdays(days: Collection<Int>): String = days.filter { it in 0..6 }.distinct().sorted().joinToString(",")
+
+/** Nome curto para um conjunto de dias; vazio = [empty]. */
+fun weekdaysLabel(days: List<Int>, empty: String): String = when {
+    days.isEmpty() -> empty
+    days.size == 7 -> "Todo dia"
+    days == listOf(0, 1, 2, 3, 4) -> "Dias úteis"
+    days == listOf(5, 6) -> "Fim de semana"
+    else -> days.joinToString(", ") { WEEKDAY_LABELS[it] }
 }
+
+fun RecurringTask.weekdayList(): List<Int> = parseWeekdays(weekdays)
+
+fun RecurringTask.daysLabel(): String =
+    if (isMonthly) "1x por mês" else weekdaysLabel(weekdayList(), "Nenhum dia")
 
 /** Programada para um dia específico (só as semanais têm dias). */
 fun RecurringTask.isScheduled(day: LocalDate): Boolean =
@@ -82,3 +92,23 @@ fun RecurringTask.isScheduled(day: LocalDate): Boolean =
 fun RecurringTask.reward(): Int = difficulty.reward
 
 fun RecurringTask.penalty(): Int = penaltyFor(difficulty)
+
+fun RecurringTask.gemReward(): GemReward? = gemRewardOf(gem, gemAmount)
+
+// ---------- Recompensas por dia da semana ----------
+
+fun ShopItem.weekdayList(): List<Int> = parseWeekdays(weekdays)
+
+fun ShopItem.daysLabel(): String = weekdaysLabel(weekdayList(), "Qualquer dia")
+
+fun InventoryItem.weekdayList(): List<Int> = parseWeekdays(weekdays)
+
+fun InventoryItem.daysLabel(): String = weekdaysLabel(weekdayList(), "Qualquer dia")
+
+/** Sem dias escolhidos, vale qualquer dia. */
+private fun allowedOn(days: List<Int>, day: LocalDate) = days.isEmpty() || day.weekdayIndex in days
+
+fun InventoryItem.usableOn(day: LocalDate): Boolean = allowedOn(weekdayList(), day)
+
+/** Item com dias só pode ser comprado nos dias em que pode ser usado. */
+fun ShopItem.availableOn(day: LocalDate): Boolean = allowedOn(weekdayList(), day)

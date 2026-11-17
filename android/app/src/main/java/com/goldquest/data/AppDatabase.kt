@@ -17,7 +17,7 @@ import androidx.room.TypeConverters
         WalletTransaction::class,
         Settings::class,
     ],
-    version = 1,
+    version = 3,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -25,7 +25,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): GoldDao
 
     companion object {
+        /**
+         * v3 (joias): recomeço do zero, sem migração. Qualquer banco de versão anterior
+         * é apagado e recriado ao abrir o app.
+         */
         fun create(context: Context): AppDatabase =
-            Room.databaseBuilder(context, AppDatabase::class.java, "gold_quest.db").build()
+            Room.databaseBuilder(context, AppDatabase::class.java, "gold_quest.db")
+                .fallbackToDestructiveMigration(dropAllTables = true)
+                .build()
     }
 }

@@ -2,8 +2,10 @@ package com.goldquest.domain
 
 import com.goldquest.data.Difficulty
 import com.goldquest.data.Frequency
+import com.goldquest.data.InventoryItem
 import com.goldquest.data.RecurringCompletion
 import com.goldquest.data.RecurringTask
+import com.goldquest.data.ShopItem
 import com.goldquest.data.Task
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -151,5 +153,32 @@ class RulesTest {
         assertEquals(72, item.reward)
         assertEquals(6, item.penalty)
         assertEquals("task-5", item.key)
+    }
+
+    @Test
+    fun diasDaSemanaSaoLidosEFormatados() {
+        assertEquals(listOf(0, 4), parseWeekdays("4, 0,4,9,x"))
+        assertEquals("0,4", formatWeekdays(setOf(4, 0)))
+        assertEquals("Qualquer dia", weekdaysLabel(emptyList(), "Qualquer dia"))
+        assertEquals("Fim de semana", weekdaysLabel(listOf(5, 6), ""))
+        assertEquals("Seg, Sex", weekdaysLabel(listOf(0, 4), ""))
+    }
+
+    @Test
+    fun recompensaSoPodeSerUsadaNosDiasEscolhidos() {
+        fun item(days: String) = InventoryItem(shopItemId = null, pricePaid = 1, name = "Filme", emoji = "🎬", weekdays = days)
+        val sabado = hoje
+        assertTrue(item("").usableOn(sabado))             // sem dia = qualquer dia
+        assertTrue(item("5").usableOn(sabado))
+        assertFalse(item("0").usableOn(sabado))           // só segunda
+        assertTrue(item("0").usableOn(sabado.plusDays(2)))
+    }
+
+    @Test
+    fun itemComDiasSoPodeSerCompradoNesses() {
+        fun item(days: String) = ShopItem(name = "Jogo", price = 100, weekdays = days)
+        assertTrue(item("").availableOn(hoje))
+        assertTrue(item("4,5").availableOn(hoje))         // sexta e sábado
+        assertFalse(item("4").availableOn(hoje))          // só sexta
     }
 }
